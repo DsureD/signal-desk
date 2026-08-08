@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · Signal Desk</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0c1117">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Signal Desk">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="brand login-brand"><span class="brand-mark">SD</span><span>Signal Desk</span></div>
+    <div class="eyebrow">PRIVATE TELEMETRY CONSOLE</div>
+    <h1>请输入访问密码</h1>
+    <p class="login-copy">这是个人 Dashboard，只有通过验证后才能查看数据。</p>
+    {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <label for="password">访问密码<input id="password" name="password" type="password" autocomplete="current-password" required autofocus></label>
+      <button class="primary-button login-submit" type="submit">进入 Dashboard <span>→</span></button>
+    </form>
+    {% if not configured %}<p class="login-hint">请先在服务器 `.env` 中设置 <code>DASHBOARD_PASSWORD</code>。</p>{% endif %}
+  </main>
+  <script src="/static/pwa.js"></script>
+</body>
+</html>

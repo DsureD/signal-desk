@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ card_title or '分享卡片' }} · Signal Desk</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0c1117">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Signal Desk">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="share-page">
+  <header class="topbar"><div class="brand"><span class="brand-mark">SD</span><span>Signal Desk</span><small>SHARED VIEW</small></div><span class="mono share-live">PUBLIC READ-ONLY</span></header>
+  <main class="share-main">
+    {% if missing %}
+    <section class="share-missing"><span class="panel-kicker">SHARE LINK</span><h1>这个分享链接不可用</h1><p>链接可能已被关闭，或卡片已经删除。</p></section>
+    {% else %}
+    <div id="shareNotice" class="notice hidden"></div>
+    <section class="share-heading"><div><div class="eyebrow">SHARED TELEMETRY</div><h1 id="shareSourceTitle">正在读取数据</h1><p id="shareSourceMeta">只读访问 · 最近 24 小时</p></div><button id="shareFullscreenBtn" class="ghost-button hidden" title="全屏查看"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path></svg><span>全屏</span></button></section>
+    <div class="share-toolbar"><span class="toolbar-label">SHARE WINDOW</span><div id="shareWindowOptions" class="share-public-options"></div><strong id="shareWindowLabel">读取中</strong><button class="icon-button share-refresh" id="shareRefreshBtn" title="刷新数据" aria-label="刷新数据"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 0-15.3-6.4L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 15.3 6.4L21 16"></path><path d="M21 21v-5h-5"></path></svg></button></div>
+    <article id="shareCard" class="dashboard-card share-card"><div class="card-head"><div class="card-heading"><span class="panel-kicker">PUBLIC CARD</span><h2 id="shareCardTitle">{{ card_title }}</h2><p id="shareFieldLabel">--</p></div><span id="shareUpdated" class="last-updated">LOADING</span></div><div id="shareStats" class="card-stats"></div><div id="shareChart" class="card-chart"></div><div class="card-foot"><span>READ-ONLY SHARE</span><span id="shareCount">--</span></div></article>
+    {% endif %}
+  </main>
+  <script src="/static/pwa.js"></script>
+  {% if not missing %}<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script><script src="/static/share.js"></script>{% endif %}
+</body>
+</html>
