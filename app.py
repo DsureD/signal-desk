@@ -10,6 +10,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from urllib.parse import urlparse
 
 load_dotenv()
 
@@ -18,9 +19,63 @@ DB_PATH = Path(os.getenv("DATABASE_PATH", BASE_DIR / "dashboard.db"))
 THINGSPEAK_BASE = os.getenv("THINGSPEAK_BASE_URL", "https://api.thingspeak.com").rstrip("/")
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
 SHARE_TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+DEBUG_MODE = os.getenv("FLASK_DEBUG", "0") == "1"
+
+# 这些是文档和 .env.example 里的占位值，一旦生效就等于把签名密钥公开在仓库里，
+# 攻击者可以自行签发 {"authenticated": true} 的 session cookie 绕过登录。
+INSECURE_SECRET_KEYS = {
+    "dev-only-change-me",
+    "replace-with-a-random-secret",
+    "replace-with-a-long-random-secret",
+}
+
+
+def load_secret_key():
+    key = os.getenv("FLASK_SECRET_KEY", "").strip()
+    if key and key not in INSECURE_SECRET_KEYS and len(key) >= 16:
+        return key
+    if DEBUG_MODE:
+        # 本地调试允许临时密钥，进程重启后已登录的 session 会失效。
+        return secrets.token_urlsafe(32)
+    raise RuntimeError(
+        "FLASK_SECRET_KEY 未配置、仍是占位值或长度不足 16 位，拒绝启动。\n"
+        "请在 .env 中设置一个不可预测的随机值，例如：\n"
+        '  python -c "import secrets; print(secrets.token_urlsafe(32))"'
+    )
+
+
+def password_matches(candidate):
+    """恒定时间比较访问密码。
+
+    hmac.compare_digest 不接受含非 ASCII 字符的 str（会抛 TypeError），
+    所以这里统一按 UTF-8 编码成 bytes 再比较，否则中文密码会 500。
+    """
+    if not DASHBOARD_PASSWORD:
+        return False
+    return hmac.compare_digest(str(candidate).encode("utf-8"), DASHBOARD_PASSWORD.encode("utf-8"))
+
+
+def safe_next_url(target):
+    """只允许跳回本站的绝对路径。
+
+    仅判断 startswith("/") 是不够的：//evil.com 和 /\\evil.com 都以 / 开头，
+    但浏览器会当成协议相对 URL 跳到外站，形成 open redirect。
+    """
+    if not target:
+        return "/"
+    target = str(target)
+    if any(char in target for char in ("\\", "\n", "\r", "\t")) or "\x00" in target:
+        return "/"
+    if not target.startswith("/") or target.startswith("//"):
+        return "/"
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return "/"
+    return target
+
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-only-change-me")
+app.config["SECRET_KEY"] = load_secret_key()
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
@@ -40,15 +95,15 @@ def require_login():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
-    next_url = request.args.get("next") or request.form.get("next") or "/"
+    next_url = safe_next_url(request.args.get("next") or request.form.get("next"))
     if request.method == "POST":
         password = request.form.get("password", "")
         if not DASHBOARD_PASSWORD:
             error = "尚未配置访问密码，请在 .env 中设置 DASHBOARD_PASSWORD。"
-        elif hmac.compare_digest(password, DASHBOARD_PASSWORD):
+        elif password_matches(password):
             session.clear()
             session["authenticated"] = True
-            return redirect(next_url if next_url.startswith("/") else "/")
+            return redirect(next_url)
         else:
             error = "密码不正确"
     return render_template("login.html", error=error, next_url=next_url, configured=bool(DASHBOARD_PASSWORD))

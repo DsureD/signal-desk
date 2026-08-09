@@ -1,4 +1,4 @@
-const CACHE_NAME='signal-desk-pwa-v3';
+const CACHE_NAME='signal-desk-pwa-v4';
 const STATIC_ASSETS=[
   '/',
   '/static/style.css',
