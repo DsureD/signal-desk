@@ -1,10 +1,11 @@
-const CACHE_NAME='signal-desk-pwa-v7';
+const CACHE_NAME='signal-desk-pwa-v8';
 const STATIC_ASSETS=[
   '/',
-  '/static/style.css?v=7',
-  '/static/app.js?v=7',
-  '/static/share.js?v=7',
-  '/static/pwa.js?v=7',
+  '/static/style.css?v=8',
+  '/static/app.js?v=8',
+  '/static/share.js?v=8',
+  '/static/pwa.js?v=8',
+  '/static/login.js?v=8',
   '/icon.svg',
   '/static/apple-touch-icon.png',
   '/static/icon-192.png',

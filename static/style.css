@@ -282,6 +282,33 @@ dialog[open]{display:flex;flex-direction:column}
   .sidebar .section-label,.sidebar .add-source,.sidebar .sidebar-foot{flex:0 0 auto}
 }
 
+/* --- 23. 登录页密码可见性切换 --- */
+.password-field{position:relative;display:block;margin-top:7px}
+/* 原来 margin-top 在 input 上，移到容器，否则按钮定位基准会偏 */
+.password-field input{margin-top:0;padding-right:46px}
+.password-toggle{
+  position:absolute;top:50%;right:1px;transform:translateY(-50%);
+  width:40px;height:calc(100% - 2px);
+  display:grid;place-items:center;
+  border:0;background:transparent;color:var(--muted);
+  border-radius:0 4px 4px 0;padding:0;
+  transition:color .2s;
+}
+.password-toggle:hover{color:var(--accent)}
+.password-toggle svg{width:17px;height:17px;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+/* 默认显示「眼睛」（点击可看明文）；已显示明文时切换成「划掉的眼睛」 */
+.password-toggle .icon-eye-off{display:none}
+.password-toggle[aria-pressed=true] .icon-eye{display:none}
+.password-toggle[aria-pressed=true] .icon-eye-off{display:block}
+.password-toggle[aria-pressed=true]{color:var(--accent)}
+@media(pointer:coarse){
+  /* 登录页不在 dialog 里，前面那条 dialog 控件规则覆盖不到，单独抬到 44px
+     并把字号提到 16px，避免 iOS Safari 聚焦时放大页面 */
+  .login-card input{min-height:44px;height:44px;font-size:16px}
+  .password-field input{padding-right:52px}
+  .password-toggle{width:46px}
+}
+
 /* --- 22. 弹窗表单控件高度对齐 ---
    实测 select 39px / input 37px：两者 padding、border、font-size 都一样，
    差异来自浏览器对内容盒高度的固有算法（input 按文本 line-height，

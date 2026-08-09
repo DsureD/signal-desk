@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=7">
+  <link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 <body class="login-page">
   <main class="login-card">
@@ -25,11 +25,12 @@
     {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
     <form method="post" action="/login">
       <input type="hidden" name="next" value="{{ next_url }}">
-      <label for="password">访问密码<input id="password" name="password" type="password" autocomplete="current-password" required autofocus></label>
+      <label for="password">访问密码<span class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" required autofocus><button type="button" class="password-toggle" id="passwordToggle" aria-label="显示密码" aria-pressed="false" title="显示密码"><svg class="icon-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg><svg class="icon-eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.6 5.2A9.9 9.9 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-2.2 3.1"></path><path d="M6.2 6.9A17 17 0 0 0 2 12s3.6 7 10 7a9.6 9.6 0 0 0 4-.8"></path><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path><path d="m3 3 18 18"></path></svg></button></span></label>
       <button class="primary-button login-submit" type="submit">进入 Dashboard <span>→</span></button>
     </form>
     {% if not configured %}<p class="login-hint">请先在服务器 `.env` 中设置 <code>DASHBOARD_PASSWORD</code>。</p>{% endif %}
   </main>
-  <script src="/static/pwa.js?v=7"></script>
+  <script src="/static/pwa.js?v=8"></script>
+  <script src="/static/login.js?v=8"></script>
 </body>
 </html>
