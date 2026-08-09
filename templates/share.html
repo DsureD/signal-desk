@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body class="share-page">
   <header class="topbar"><div class="brand"><span class="brand-mark">SD</span><span>Signal Desk</span><small>SHARED VIEW</small></div><span class="mono share-live">PUBLIC READ-ONLY</span></header>
@@ -28,7 +28,7 @@
     <article id="shareCard" class="dashboard-card share-card"><div class="card-head"><div class="card-heading"><span class="panel-kicker">PUBLIC CARD</span><h2 id="shareCardTitle">{{ card_title }}</h2><p id="shareFieldLabel">--</p></div><span id="shareUpdated" class="last-updated">LOADING</span></div><div id="shareStats" class="card-stats"></div><div id="shareChart" class="card-chart"></div><div class="card-foot"><span>READ-ONLY SHARE</span><span id="shareCount">--</span></div></article>
     {% endif %}
   </main>
-  <script src="/static/pwa.js"></script>
-  {% if not missing %}<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script><script src="/static/share.js"></script>{% endif %}
+  <script src="/static/pwa.js?v=7"></script>
+  {% if not missing %}<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script><script src="/static/share.js?v=7"></script>{% endif %}
 </body>
 </html>

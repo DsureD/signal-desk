@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body class="login-page">
   <main class="login-card">
@@ -30,6 +30,6 @@
     </form>
     {% if not configured %}<p class="login-hint">请先在服务器 `.env` 中设置 <code>DASHBOARD_PASSWORD</code>。</p>{% endif %}
   </main>
-  <script src="/static/pwa.js"></script>
+  <script src="/static/pwa.js?v=7"></script>
 </body>
 </html>

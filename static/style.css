@@ -67,6 +67,25 @@ body{min-height:100vh;min-height:100dvh}
 html{overflow-x:clip}
 body{overflow-x:clip}
 
+/* 抽屉打开时锁滚动。
+   实测：无论 html 还是 body 设 overflow:hidden，根元素都不再是 scrollport，
+   position:sticky 会彻底失效并退回文档流位置（topbar.top 变成 -scrollY，
+   于是导航栏和菜单按钮一起消失）。原始代码的 body.sidebar-open{overflow:hidden}
+   就有这个问题。因此移动端把 topbar 改成 position:fixed —— 它不依赖 scrollport。 */
+html.sidebar-locked{overflow:hidden}
+html.sidebar-locked,html.sidebar-locked body{touch-action:none}
+/* 抽屉自身要能滚，backdrop 吞掉触摸拖动（tap 不受 touch-action 影响，仍可点击关闭） */
+html.sidebar-locked .sidebar{touch-action:pan-y}
+
+@media(max-width:900px){
+  /* fixed 而非 sticky：锁滚动时不会被移出视口 */
+  .topbar{position:fixed;top:0;left:0;right:0;width:100%}
+  /* topbar 脱离文档流，用 padding 把内容顶下来 */
+  .app-shell{padding-top:var(--topbar-total)}
+  /* 原来 body.sidebar-open{overflow:hidden} 破坏 sticky，现在锁交给 html.sidebar-locked */
+  body.sidebar-open{overflow:visible}
+}
+
 /* --- 3. 安全区：配合三个模板的 viewport-fit=cover 与 black-translucent 状态栏 --- */
 .topbar{height:var(--topbar-total);padding-top:var(--safe-t);padding-left:max(var(--topbar-px),var(--safe-l));padding-right:max(var(--topbar-px),var(--safe-r))}
 .content{padding-left:max(48px,var(--safe-l));padding-right:max(48px,var(--safe-r));padding-bottom:calc(70px + var(--safe-b))}
@@ -145,6 +164,13 @@ dialog[open]{display:flex;flex-direction:column}
 
   .source-list{padding-bottom:2px}
   .sidebar-foot{padding-bottom:var(--safe-b)}
+
+  /* 数据源多时只让列表滚动，「添加数据源」和「退出登录」始终留在抽屉可视区内。
+     抽屉是 flex 列，若不给列表 flex:1 + min-height:0，
+     .sidebar-foot 的 margin-top:auto 会因无剩余空间而失效，登出被挤出可视区。 */
+  .sidebar{overflow:hidden}
+  .sidebar .source-list{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:grid;align-content:start;grid-auto-rows:min-content}
+  .sidebar .section-label,.sidebar .add-source,.sidebar .sidebar-foot{flex:0 0 auto}
 }
 /* --- 8. ≤600px --- */
 @media(max-width:600px){
@@ -234,6 +260,79 @@ dialog[open]{display:flex;flex-direction:column}
 
 /* --- 16. label 通用 margin-bottom:14px 在 flex 行里把 AUTO REFRESH 顶高约 7px --- */
 .toolbar-label{margin-bottom:0}
+/* --- 20. 桌面侧边栏：改 sticky 并限高在视口内 ---
+   原先 .sidebar 是 grid item，默认 stretch 到整行高度；卡片多时这一行很高，
+   .sidebar-foot{margin-top:auto} 会把「退出登录」推到整页最底部，要滚到底才看得见。 */
+@media(min-width:901px){
+  .sidebar{
+    position:sticky;
+    top:var(--topbar-total);
+    align-self:start;               /* 关键：不再被 grid 拉伸到整行高 */
+    height:calc(100vh - var(--topbar-total));
+    height:calc(100dvh - var(--topbar-total));
+    min-height:0;
+    overflow:hidden;                /* 内部由 .source-list 滚动 */
+    padding-bottom:calc(28px + var(--safe-b));
+  }
+  /* 数据源很多时只让列表滚动，「添加数据源」和「退出登录」保持可见 */
+  /* align-content:start 必须给：.source-list 是 grid 容器，flex:1 撑满剩余高度后，
+     grid 行默认 align-content:stretch 会平分容器高度 —— 数据源少时每项被拉高，
+     多时又被压缩，看起来高度不统一。grid-auto-rows:min-content 再兜一层。 */
+  .sidebar .source-list{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:grid;align-content:start;grid-auto-rows:min-content}
+  .sidebar .section-label,.sidebar .add-source,.sidebar .sidebar-foot{flex:0 0 auto}
+}
+
+/* --- 22. 弹窗表单控件高度对齐 ---
+   实测 select 39px / input 37px：两者 padding、border、font-size 都一样，
+   差异来自浏览器对内容盒高度的固有算法（input 按文本 line-height，
+   select 额外为下拉留内部高度）。用显式 min-height + line-height 抹平。 */
+dialog input:not([type=checkbox]),
+dialog textarea,
+dialog select{
+  min-height:40px;
+  line-height:1.2;
+}
+/* 弹窗内的 datetime-local 继承了 .custom-range input 的 11px，与同排控件的 12px 不齐 */
+dialog .custom-range input{font-size:12px}
+/* 单行控件统一高度；textarea 要能按 rows 增高，所以只给下限 */
+dialog input:not([type=checkbox]),
+dialog select{height:40px}
+dialog textarea{height:auto}
+
+/* 触屏：抬到 44px 触控目标，同时字号提到 16px 避免 iOS Safari 聚焦缩放
+   （dialog 内控件继承 label 的 12px，原先漏了这一处） */
+@media(pointer:coarse){
+  dialog input:not([type=checkbox]),
+  dialog textarea,
+  dialog select{font-size:16px;min-height:44px}
+  dialog input:not([type=checkbox]),
+  dialog select{height:44px}
+  dialog textarea{height:auto}
+}
+
+/* --- 21. 滚动条：默认的浅色宽滚动条在深色面板上很突兀 --- */
+/* Firefox */
+.source-list,.sidebar,#sourceForm,#cardForm,.confirm-body,.segmented,.field-picker,.card-chart{
+  scrollbar-width:thin;
+  scrollbar-color:#3a4b58 transparent;
+}
+/* Chromium / WebKit */
+.source-list::-webkit-scrollbar,.sidebar::-webkit-scrollbar,#sourceForm::-webkit-scrollbar,
+#cardForm::-webkit-scrollbar,.confirm-body::-webkit-scrollbar,.segmented::-webkit-scrollbar,
+.field-picker::-webkit-scrollbar,.card-chart::-webkit-scrollbar{width:6px;height:6px}
+.source-list::-webkit-scrollbar-track,.sidebar::-webkit-scrollbar-track,#sourceForm::-webkit-scrollbar-track,
+#cardForm::-webkit-scrollbar-track,.confirm-body::-webkit-scrollbar-track,.segmented::-webkit-scrollbar-track,
+.field-picker::-webkit-scrollbar-track,.card-chart::-webkit-scrollbar-track{background:transparent}
+.source-list::-webkit-scrollbar-thumb,.sidebar::-webkit-scrollbar-thumb,#sourceForm::-webkit-scrollbar-thumb,
+#cardForm::-webkit-scrollbar-thumb,.confirm-body::-webkit-scrollbar-thumb,.segmented::-webkit-scrollbar-thumb,
+.field-picker::-webkit-scrollbar-thumb,.card-chart::-webkit-scrollbar-thumb{
+  background:#33434f;border-radius:3px;
+}
+.source-list::-webkit-scrollbar-thumb:hover,.sidebar::-webkit-scrollbar-thumb:hover,
+#sourceForm::-webkit-scrollbar-thumb:hover,#cardForm::-webkit-scrollbar-thumb:hover,
+.confirm-body::-webkit-scrollbar-thumb:hover,.field-picker::-webkit-scrollbar-thumb:hover{background:#47596a}
+/* 触屏本来就是覆盖式滚动条，不占位，无需处理 */
+
 /* --- 17. 桌面收起态：pointer-events:none 挡不住键盘 Tab，补 visibility --- */
 @media(min-width:901px){
   .app-shell.sidebar-collapsed .sidebar{visibility:hidden;transition:width .24s ease,padding .24s ease,border-color .24s ease,opacity .18s ease,visibility 0s linear .24s}
