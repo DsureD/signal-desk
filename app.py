@@ -688,9 +688,7 @@ def share_data(token):
     start_time, end_time, window_label, selected_window, available_windows = get_share_window(
         card, request.args.get("window")
     )
-    window_hours = max(1, (end_time - start_time).total_seconds() / 3600)
-    requested_results = max(200, math.ceil(window_hours * 120))
-    params = {"results": min(requested_results, 8000)}
+    params = {}
     api_key = source["read_api_key"]
     if api_key:
         params["api_key"] = api_key
@@ -727,12 +725,8 @@ def source_data(source_id):
     if not source["enabled"]:
         return jsonify({"error": "数据源已禁用"}), 409
 
-    try:
-        requested_results = int(request.args.get("results", 200))
-    except (TypeError, ValueError):
-        requested_results = 200
     last_only = request.args.get("last") in {"1", "true", "yes"}
-    params = {"offset": 0} if last_only else {"results": min(max(requested_results, 1), 8000)}
+    params = {"offset": 0}
     api_key = source["read_api_key"]
     if api_key:
         params["api_key"] = api_key
@@ -743,6 +737,12 @@ def source_data(source_id):
             params["start"] = start
         if end:
             params["end"] = end
+        if not start and not end:
+            try:
+                requested_results = int(request.args.get("results", 200))
+            except (TypeError, ValueError):
+                requested_results = 200
+            params["results"] = min(max(requested_results, 1), 8000)
     try:
         endpoint = "feeds/last.json" if last_only else "feeds.json"
         response = requests.get(f"{THINGSPEAK_BASE}/channels/{source['channel_id']}/{endpoint}", params=params, timeout=15)
