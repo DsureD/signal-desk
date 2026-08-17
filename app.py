@@ -21,6 +21,7 @@ DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
 SHARE_TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 DEBUG_MODE = os.getenv("FLASK_DEBUG", "0") == "1"
 
+
 # 这些是文档和 .env.example 里的占位值，一旦生效就等于把签名密钥公开在仓库里，
 # 攻击者可以自行签发 {"authenticated": true} 的 session cookie 绕过登录。
 INSECURE_SECRET_KEYS = {
@@ -79,7 +80,7 @@ app.config["SECRET_KEY"] = load_secret_key()
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
-
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=int(os.getenv("SESSION_DAYS", 7)))  # 1.新增修改关联session时效的
 
 @app.before_request
 def require_login():
@@ -102,6 +103,7 @@ def login():
             error = "尚未配置访问密码，请在 .env 中设置 DASHBOARD_PASSWORD。"
         elif password_matches(password):
             session.clear()
+            session.permanent = True  # 2.新增修改关联session时效的
             session["authenticated"] = True
             return redirect(next_url)
         else:
@@ -178,6 +180,7 @@ def init_db():
                 source_id INTEGER NOT NULL,
                 title TEXT NOT NULL DEFAULT '实时趋势',
                 field_numbers TEXT NOT NULL DEFAULT '[1]',
+                field_selections TEXT NOT NULL DEFAULT '[]',
                 chart_type TEXT NOT NULL DEFAULT 'line',
                 y_axis_min REAL,
                 show_stats INTEGER NOT NULL DEFAULT 1,
@@ -214,15 +217,43 @@ def init_db():
                     "UPDATE dashboard_cards SET share_windows = ? WHERE id = ?",
                     (json.dumps([int(card["share_hours"] or 24)]), card["id"]),
                 )
+        if "field_selections" not in columns:
+            db.execute("ALTER TABLE dashboard_cards ADD COLUMN field_selections TEXT NOT NULL DEFAULT '[]'")
+        for card in db.execute(
+            "SELECT id, source_id, field_numbers, field_selections FROM dashboard_cards"
+        ).fetchall():
+            try:
+                selections = json.loads(card["field_selections"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                selections = []
+            if selections:
+                continue
+            try:
+                numbers = json.loads(card["field_numbers"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                numbers = [1]
+            selections = [
+                {"source_id": card["source_id"], "field_number": int(number)}
+                for number in numbers
+                if str(number).isdigit() and 1 <= int(number) <= 8
+            ]
+            db.execute(
+                "UPDATE dashboard_cards SET field_selections = ? WHERE id = ?",
+                (json.dumps(selections or [{"source_id": card["source_id"], "field_number": 1}]), card["id"]),
+            )
         source_ids = db.execute("SELECT id FROM data_sources").fetchall()
         for source in source_ids:
             has_card = db.execute(
                 "SELECT 1 FROM dashboard_cards WHERE source_id = ? LIMIT 1", (source["id"],)
             ).fetchone()
             if not has_card:
+                selections = [
+                    {"source_id": source["id"], "field_number": number}
+                    for number in range(1, 9)
+                ]
                 db.execute(
-                    "INSERT INTO dashboard_cards (source_id, title, field_numbers, sort_order) VALUES (?, ?, ?, ?)",
-                    (source["id"], "实时趋势", json.dumps(list(range(1, 9))), 0),
+                    "INSERT INTO dashboard_cards (source_id, title, field_numbers, field_selections, sort_order) VALUES (?, ?, ?, ?, ?)",
+                    (source["id"], "实时趋势", json.dumps(list(range(1, 9))), json.dumps(selections), 0),
                 )
         for card in db.execute(
             "SELECT id, share_token FROM dashboard_cards WHERE share_token IS NOT NULL"
@@ -269,6 +300,42 @@ def get_fields(source_id):
     ]
 
 
+def card_field_selections(row):
+    try:
+        raw_selections = json.loads(row["field_selections"])
+    except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        raw_selections = []
+    selections = []
+    seen = set()
+    if isinstance(raw_selections, list):
+        for item in raw_selections:
+            if not isinstance(item, dict):
+                continue
+            try:
+                source_id = int(item.get("source_id"))
+                field_number = int(item.get("field_number"))
+            except (TypeError, ValueError):
+                continue
+            key = (source_id, field_number)
+            if source_id > 0 and 1 <= field_number <= 8 and key not in seen:
+                selections.append({"source_id": source_id, "field_number": field_number})
+                seen.add(key)
+    if selections:
+        return selections
+    try:
+        field_numbers = json.loads(row["field_numbers"])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        field_numbers = [1]
+    for item in field_numbers if isinstance(field_numbers, list) else [1]:
+        try:
+            field_number = int(item)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= field_number <= 8:
+            selections.append({"source_id": int(row["source_id"]), "field_number": field_number})
+    return selections or [{"source_id": int(row["source_id"]), "field_number": 1}]
+
+
 def card_public(row, include_token=True):
     try:
         field_numbers = json.loads(row["field_numbers"])
@@ -283,6 +350,7 @@ def card_public(row, include_token=True):
         "source_id": row["source_id"],
         "title": row["title"],
         "field_numbers": field_numbers,
+        "field_selections": card_field_selections(row),
         "chart_type": row["chart_type"],
         "y_axis_min": row["y_axis_min"],
         "show_stats": bool(row["show_stats"]),
@@ -324,7 +392,7 @@ def validate_payload(payload):
     }, None
 
 
-def validate_card_payload(payload, existing=None):
+def validate_card_payload(payload, owner_source_id, existing=None):
     payload = payload if isinstance(payload, dict) else {}
     title = str(payload.get("title", existing["title"] if existing else "实时趋势")).strip()
     if not title:
@@ -333,24 +401,52 @@ def validate_card_payload(payload, existing=None):
     if chart_type not in {"line", "bar", "area"}:
         return None, "不支持的图表类型"
 
-    raw_fields = payload.get("field_numbers")
-    if raw_fields is None and existing:
-        try:
-            raw_fields = json.loads(existing["field_numbers"])
-        except (TypeError, ValueError, json.JSONDecodeError):
-            raw_fields = [1]
-    if not isinstance(raw_fields, list):
+    raw_selections = payload.get("field_selections")
+    if raw_selections is None and existing:
+        raw_selections = card_field_selections(existing)
+    if raw_selections is None:
+        raw_fields = payload.get("field_numbers", [1])
+        if isinstance(raw_fields, list):
+            raw_selections = [
+                {"source_id": owner_source_id, "field_number": number}
+                for number in raw_fields
+            ]
+    if not isinstance(raw_selections, list):
         return None, "请选择至少一个 field"
-    field_numbers = []
-    for item in raw_fields:
+    field_selections = []
+    seen_fields = set()
+    for item in raw_selections:
+        if not isinstance(item, dict):
+            continue
         try:
-            number = int(item)
+            source_id = int(item.get("source_id"))
+            number = int(item.get("field_number"))
         except (TypeError, ValueError):
             continue
-        if 1 <= number <= 8 and number not in field_numbers:
-            field_numbers.append(number)
-    if not field_numbers:
+        key = (source_id, number)
+        if source_id > 0 and 1 <= number <= 8 and key not in seen_fields:
+            field_selections.append({"source_id": source_id, "field_number": number})
+            seen_fields.add(key)
+    if not field_selections:
         return None, "请选择至少一个 field"
+    source_ids = {selection["source_id"] for selection in field_selections}
+    with get_db() as db:
+        placeholders = ",".join("?" for _ in source_ids)
+        existing_source_ids = {
+            row["id"]
+            for row in db.execute(
+                f"SELECT id FROM data_sources WHERE id IN ({placeholders})", tuple(source_ids)
+            ).fetchall()
+        }
+    if existing_source_ids != source_ids:
+        return None, "部分 Field 所属的数据源不存在"
+    field_numbers = [
+        selection["field_number"]
+        for selection in field_selections
+        if selection["source_id"] == owner_source_id
+    ]
+    if not field_numbers:
+        field_numbers = [field_selections[0]["field_number"]]
 
     raw_min = payload.get("y_axis_min", existing["y_axis_min"] if existing else None)
     y_axis_min = None
@@ -413,6 +509,7 @@ def validate_card_payload(payload, existing=None):
     return {
         "title": title[:80],
         "field_numbers": field_numbers,
+        "field_selections": field_selections,
         "chart_type": chart_type,
         "y_axis_min": y_axis_min,
         "show_stats": 1 if payload.get("show_stats", existing["show_stats"] if existing else True) else 0,
@@ -478,8 +575,10 @@ def create_source():
                 (source_id, number, f"Field {number}"),
             )
         db.execute(
-            "INSERT INTO dashboard_cards (source_id, title, field_numbers, sort_order) VALUES (?, ?, ?, ?)",
-            (source_id, "实时趋势", json.dumps(list(range(1, 9))), 0),
+            "INSERT INTO dashboard_cards (source_id, title, field_numbers, field_selections, sort_order) VALUES (?, ?, ?, ?, ?)",
+            (source_id, "实时趋势", json.dumps(list(range(1, 9))), json.dumps([
+                {"source_id": source_id, "field_number": number} for number in range(1, 9)
+            ]), 0),
         )
         row = db.execute("SELECT * FROM data_sources WHERE id = ?", (source_id,)).fetchone()
     return jsonify(source_public(row)), 201
@@ -507,6 +606,28 @@ def update_source(source_id):
 @app.delete("/api/sources/<int:source_id>")
 def delete_source(source_id):
     with get_db() as db:
+        cards = db.execute(
+            "SELECT * FROM dashboard_cards WHERE source_id != ?", (source_id,)
+        ).fetchall()
+        for card in cards:
+            selections = [
+                selection
+                for selection in card_field_selections(card)
+                if selection["source_id"] != source_id
+            ]
+            if len(selections) == len(card_field_selections(card)):
+                continue
+            if not selections:
+                selections = [{"source_id": card["source_id"], "field_number": 1}]
+            owner_fields = [
+                selection["field_number"]
+                for selection in selections
+                if selection["source_id"] == card["source_id"]
+            ]
+            db.execute(
+                "UPDATE dashboard_cards SET field_numbers = ?, field_selections = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (json.dumps(owner_fields or [selections[0]["field_number"]]), json.dumps(selections), card["id"]),
+            )
         result = db.execute("DELETE FROM data_sources WHERE id = ?", (source_id,))
     if result.rowcount == 0:
         return jsonify({"error": "数据源不存在"}), 404
@@ -546,7 +667,7 @@ def list_cards(source_id):
 def create_card(source_id):
     if not get_source(source_id):
         return jsonify({"error": "数据源不存在"}), 404
-    payload, error = validate_card_payload(request.get_json(silent=True) or {})
+    payload, error = validate_card_payload(request.get_json(silent=True) or {}, source_id)
     if error:
         return jsonify({"error": error}), 400
     with get_db() as db:
@@ -556,10 +677,10 @@ def create_card(source_id):
         payload["sort_order"] = current
         cursor = db.execute(
             """INSERT INTO dashboard_cards
-            (source_id, title, field_numbers, chart_type, y_axis_min, show_stats, share_enabled,
+            (source_id, title, field_numbers, field_selections, chart_type, y_axis_min, show_stats, share_enabled,
             fullscreen_enabled, share_token, share_hours, share_start, share_end, share_windows, sort_order, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
-            (source_id, payload["title"], json.dumps(payload["field_numbers"]), payload["chart_type"],
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+            (source_id, payload["title"], json.dumps(payload["field_numbers"]), json.dumps(payload["field_selections"]), payload["chart_type"],
              payload["y_axis_min"], payload["show_stats"], payload["share_enabled"],
              payload["fullscreen_enabled"], payload["share_token"], payload["share_hours"],
              payload["share_start"], payload["share_end"], json.dumps(payload["share_windows"]), payload["sort_order"]),
@@ -576,15 +697,15 @@ def update_card(source_id, card_id):
         ).fetchone()
         if not existing:
             return jsonify({"error": "卡片不存在"}), 404
-        payload, error = validate_card_payload(request.get_json(silent=True) or {}, existing)
+        payload, error = validate_card_payload(request.get_json(silent=True) or {}, source_id, existing)
         if error:
             return jsonify({"error": error}), 400
         db.execute(
-            """UPDATE dashboard_cards SET title = ?, field_numbers = ?, chart_type = ?, y_axis_min = ?,
+            """UPDATE dashboard_cards SET title = ?, field_numbers = ?, field_selections = ?, chart_type = ?, y_axis_min = ?,
             show_stats = ?, share_enabled = ?, fullscreen_enabled = ?, share_token = ?, share_hours = ?,
             share_start = ?, share_end = ?, share_windows = ?, sort_order = ?,
             updated_at = CURRENT_TIMESTAMP WHERE id = ? AND source_id = ?""",
-            (payload["title"], json.dumps(payload["field_numbers"]), payload["chart_type"], payload["y_axis_min"],
+            (payload["title"], json.dumps(payload["field_numbers"]), json.dumps(payload["field_selections"]), payload["chart_type"], payload["y_axis_min"],
              payload["show_stats"], payload["share_enabled"], payload["fullscreen_enabled"], payload["share_token"],
              payload["share_hours"], payload["share_start"], payload["share_end"], json.dumps(payload["share_windows"]), payload["sort_order"],
              card_id, source_id),
@@ -610,10 +731,24 @@ def channel_info(source_id):
     if not source:
         return jsonify({"error": "数据源不存在"}), 404
     try:
-        response = requests.get(f"{THINGSPEAK_BASE}/channels/{source['channel_id']}.json", timeout=10)
+        params = {"results": 1}
+        if source["read_api_key"]:
+            params["api_key"] = source["read_api_key"]
+        response = requests.get(
+            f"{THINGSPEAK_BASE}/channels/{source['channel_id']}/feeds.json",
+            params=params,
+            timeout=10,
+        )
         response.raise_for_status()
-        return jsonify(response.json())
-    except requests.RequestException as exc:
+        payload = response.json()
+        channel = payload.get("channel") if isinstance(payload, dict) else None
+        fields = {
+            key: value for key, value in channel.items() if key.startswith("field")
+        } if isinstance(channel, dict) else {}
+        if not fields:
+            return jsonify({"error": "ThingSpeak 未返回 Channel Field 元数据"}), 502
+        return jsonify(fields)
+    except (requests.RequestException, ValueError, AttributeError) as exc:
         return jsonify({"error": f"ThingSpeak 请求失败：{exc}"}), 502
 
 
@@ -681,33 +816,63 @@ def share_data(token):
     card = get_shared_card(token)
     if not card:
         return jsonify({"error": "分享链接不存在或已关闭"}), 404
+    selections = card_field_selections(card)
+    selected_source_ids = {selection["source_id"] for selection in selections}
+    source_ids = selected_source_ids | {card["source_id"]}
     with get_db() as db:
-        source = db.execute("SELECT * FROM data_sources WHERE id = ?", (card["source_id"],)).fetchone()
+        placeholders = ",".join("?" for _ in source_ids)
+        sources = {
+            row["id"]: row
+            for row in db.execute(
+                f"SELECT * FROM data_sources WHERE id IN ({placeholders})", tuple(source_ids)
+            ).fetchall()
+        }
+    source = sources.get(card["source_id"])
     if not source or not source["enabled"]:
         return jsonify({"error": "数据源已禁用"}), 409
     start_time, end_time, window_label, selected_window, available_windows = get_share_window(
         card, request.args.get("window")
     )
-    params = {}
-    api_key = source["read_api_key"]
-    if api_key:
-        params["api_key"] = api_key
-    params["start"] = start_time.isoformat()
-    params["end"] = end_time.isoformat()
     try:
-        response = requests.get(
-            f"{THINGSPEAK_BASE}/channels/{source['channel_id']}/feeds.json",
-            params=params,
-            timeout=15,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        channel = payload.get("channel") or {}
-        payload["channel"] = {
-            key: value for key, value in channel.items() if key.startswith("field")
+        source_data = {}
+        for selected_source_id in selected_source_ids:
+            selected_source = sources.get(selected_source_id)
+            if not selected_source:
+                continue
+            dataset = {
+                "source": {"id": selected_source_id, "name": selected_source["name"]},
+                "fields": get_fields(selected_source_id),
+                "channel": {},
+                "feeds": [],
+            }
+            if selected_source["enabled"]:
+                params = {
+                    "start": start_time.isoformat(),
+                    "end": end_time.isoformat(),
+                }
+                if selected_source["read_api_key"]:
+                    params["api_key"] = selected_source["read_api_key"]
+                response = requests.get(
+                    f"{THINGSPEAK_BASE}/channels/{selected_source['channel_id']}/feeds.json",
+                    params=params,
+                    timeout=15,
+                )
+                response.raise_for_status()
+                response_payload = response.json()
+                channel = response_payload.get("channel") or {}
+                dataset["channel"] = {
+                    key: value for key, value in channel.items() if key.startswith("field")
+                }
+                dataset["feeds"] = response_payload.get("feeds") or []
+            source_data[str(selected_source_id)] = dataset
+        owner_data = source_data.get(str(source["id"]), {})
+        payload = {
+            "channel": owner_data.get("channel", {}),
+            "feeds": owner_data.get("feeds", []),
+            "fields": get_fields(source["id"]),
+            "source": {"id": source["id"], "name": source["name"]},
+            "source_data": source_data,
         }
-        payload["source"] = {"name": source["name"]}
-        payload["fields"] = get_fields(source["id"])
         payload["card"] = card_public(card, include_token=False)
         payload["share_window"] = window_label
         payload["selected_window"] = selected_window
