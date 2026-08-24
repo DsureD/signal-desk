@@ -50,24 +50,201 @@ async function ensureSourceChannel(sourceId){sourceId=Number(sourceId);if(state.
 async function activateCardSource(sourceId){activeCardSourceId=Number(sourceId);renderFieldSourceTabs();const source=state.sources.find(item=>item.id===activeCardSourceId);if(source?.enabled&&!state.channelsBySource.has(activeCardSourceId)){$('cardFields').setAttribute('aria-busy','true');$('cardFields').innerHTML='<div class="field-picker-loading"><span></span>读取 Field 名称</div>';await ensureSourceChannel(activeCardSourceId)}if(activeCardSourceId===Number(sourceId)){$('cardFields').removeAttribute('aria-busy');renderFieldPicker(activeCardSourceId)}}
 function iconSvg(name){const paths={edit:'<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"></path>',share:'<path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>',fullscreen:'<path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path>'};return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]||''}</svg>`}
 function mobileChartMode(){return window.matchMedia?.('(max-width:900px)').matches}
-function clearSourceDragState(){document.querySelectorAll('#sourceList .source-item').forEach(item=>item.classList.remove('dragging','drag-over'))}
+function clearSourceDragState(){document.querySelectorAll('#sourceList .source-item').forEach(item=>item.classList.remove('dragging','drag-over-top','drag-over-bottom'))}
 function queueSourceOrderSave(){const sourceIds=state.sources.map(source=>source.id);sourceOrderSave=sourceOrderSave.then(()=>api('/api/sources/order',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({source_ids:sourceIds})})).catch(error=>{showNotice(error.message);return loadSources()})}
 function moveSource(sourceId,targetId,after){const fromIndex=state.sources.findIndex(source=>source.id===sourceId);const targetIndex=state.sources.findIndex(source=>source.id===targetId);if(fromIndex<0||targetIndex<0||fromIndex===targetIndex)return;const [source]=state.sources.splice(fromIndex,1);let insertIndex=targetIndex+(after?1:0);if(fromIndex<insertIndex)insertIndex-=1;state.sources.splice(insertIndex,0,source);renderSources();queueSourceOrderSave()}
-function renderSources(){const list=$('sourceList');list.innerHTML='';if(!state.sources.length){list.innerHTML='<div class="empty-mini">暂无数据源</div>';return}state.sources.forEach(source=>{const btn=document.createElement('button');btn.className=`source-item ${source.id===state.selectedId?'active':''} ${source.enabled?'':'source-disabled'}`;btn.draggable=!isTouchDevice;if(!isTouchDevice)btn.title='拖拽调整数据源顺序';btn.innerHTML=`<span class="source-name">${escapeHtml(source.name)}</span><span class="source-meta">CH ${escapeHtml(source.channel_id)}${source.enabled?'':' · DISABLED'}</span>${isTouchDevice?'':'<span class="source-drag-handle" aria-hidden="true">⋮⋮</span>'}`;btn.onclick=()=>{if(isDraggingSource)return;selectSource(source.id)};btn.addEventListener('dragstart',event=>{isDraggingSource=true;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(source.id));btn.classList.add('dragging')});btn.addEventListener('dragover',event=>{event.preventDefault();event.dataTransfer.dropEffect='move';clearSourceDragState();btn.classList.add('drag-over')});btn.addEventListener('dragleave',event=>{if(!btn.contains(event.relatedTarget))btn.classList.remove('drag-over')});btn.addEventListener('drop',event=>{event.preventDefault();const sourceId=Number(event.dataTransfer.getData('text/plain'));const rect=btn.getBoundingClientRect();const after=event.clientY>rect.top+rect.height/2;clearSourceDragState();moveSource(sourceId,source.id,after);setTimeout(()=>{isDraggingSource=false},0)});btn.addEventListener('dragend',()=>{clearSourceDragState();setTimeout(()=>{isDraggingSource=false},0)});list.appendChild(btn)})}
+function renderSources(){const list=$('sourceList');list.innerHTML='';if(!state.sources.length){list.innerHTML='<div class="empty-mini">暂无数据源</div>';return}state.sources.forEach(source=>{const btn=document.createElement('button');btn.className=`source-item ${source.id===state.selectedId?'active':''} ${source.enabled?'':'source-disabled'}`;btn.draggable=!isTouchDevice;if(!isTouchDevice)btn.title='拖拽调整数据源顺序';else btn.title='长按拖拽调整顺序';btn.innerHTML=`<span class="source-name">${escapeHtml(source.name)}</span><span class="source-meta">CH ${escapeHtml(source.channel_id)}${source.enabled?'':' · DISABLED'}</span>${isTouchDevice?'<span class="source-drag-handle" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></span>':'<span class="source-drag-handle" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></span>'}`;btn.onclick=()=>{if(isDraggingSource)return;selectSource(source.id)};if(isTouchDevice){let touchTimer=null;let touchStartY=0;let initialRect=null;let offsetY=0;let wasDragging=false;const resetTouchState=()=>{if(touchTimer){clearTimeout(touchTimer);touchTimer=null}btn.style.transform='';btn.classList.remove('touch-dragging');clearSourceDragState();isDraggingSource=false;wasDragging=false};btn.addEventListener('touchstart',event=>{if(isDraggingSource)return;touchStartY=event.touches[0].clientY;initialRect=btn.getBoundingClientRect();offsetY=touchStartY-initialRect.top;wasDragging=false;touchTimer=setTimeout(()=>{isDraggingSource=true;wasDragging=true;btn.classList.add('touch-dragging');if(navigator.vibrate)navigator.vibrate(50)},500)},{passive:true});btn.addEventListener('touchmove',event=>{if(touchTimer&&Math.abs(event.touches[0].clientY-touchStartY)>10){clearTimeout(touchTimer);touchTimer=null;return}if(!isDraggingSource||!wasDragging)return;event.preventDefault();const touch=event.touches[0];const deltaY=touch.clientY-offsetY-initialRect.top;btn.style.transform=`translateY(${deltaY}px)`;const items=Array.from(list.querySelectorAll('.source-item:not(.touch-dragging)'));let targetItem=null;let insertAfter=false;for(const item of items){const rect=item.getBoundingClientRect();if(touch.clientY>=rect.top&&touch.clientY<=rect.bottom){targetItem=item;insertAfter=touch.clientY>rect.top+rect.height/2;break}}items.forEach(item=>item.classList.remove('drag-over-top','drag-over-bottom'));if(targetItem){targetItem.classList.add(insertAfter?'drag-over-bottom':'drag-over-top')}},{passive:false});btn.addEventListener('touchend',event=>{if(touchTimer){clearTimeout(touchTimer);touchTimer=null}if(!isDraggingSource||!wasDragging){resetTouchState();return}event.preventDefault();const touch=event.changedTouches[0];const items=Array.from(list.querySelectorAll('.source-item:not(.touch-dragging)'));let targetItem=null;let insertAfter=false;for(const item of items){const rect=item.getBoundingClientRect();if(touch.clientY>=rect.top&&touch.clientY<=rect.bottom){targetItem=item;insertAfter=touch.clientY>rect.top+rect.height/2;break}}resetTouchState();if(targetItem){const targetSource=state.sources.find(s=>targetItem.textContent.includes(s.name));if(targetSource&&targetSource.id!==source.id){moveSource(source.id,targetSource.id,insertAfter)}}},{passive:false});btn.addEventListener('touchcancel',()=>{resetTouchState()})}else{btn.addEventListener('dragstart',event=>{isDraggingSource=true;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(source.id));btn.classList.add('dragging')});btn.addEventListener('dragover',event=>{event.preventDefault();event.dataTransfer.dropEffect='move';const rect=btn.getBoundingClientRect();const after=event.clientY>rect.top+rect.height/2;const targetClass=after?'drag-over-bottom':'drag-over-top';const otherClass=after?'drag-over-top':'drag-over-bottom';if(!btn.classList.contains(targetClass)){document.querySelectorAll('#sourceList .source-item').forEach(item=>{if(item!==btn){item.classList.remove('drag-over-top','drag-over-bottom')}});btn.classList.remove(otherClass);btn.classList.add(targetClass)}});btn.addEventListener('dragleave',event=>{if(!btn.contains(event.relatedTarget)){btn.classList.remove('drag-over-top','drag-over-bottom')}});btn.addEventListener('drop',event=>{event.preventDefault();const sourceId=Number(event.dataTransfer.getData('text/plain'));const rect=btn.getBoundingClientRect();const after=event.clientY>rect.top+rect.height/2;clearSourceDragState();moveSource(sourceId,source.id,after);setTimeout(()=>{isDraggingSource=false},0)});btn.addEventListener('dragend',()=>{clearSourceDragState();setTimeout(()=>{isDraggingSource=false},0)})}list.appendChild(btn)})}
 async function loadSources(){try{state.sources=await api('/api/sources');if(state.sources.length&&!state.selectedId)state.selectedId=state.sources[0].id;renderSources();if(state.selectedId)await selectSource(state.selectedId);else resetView()}catch(error){showNotice(error.message)}}
 async function selectSource(id){state.selectedId=id;closeSidebar();state.requestToken+=1;state.loading=false;state.windowKey='';state.lastEntryId=null;state.feeds=[];state.channel={};state.feedsBySource=new Map();state.channelsBySource=new Map();state.cards=[];clearCharts();renderSources();const source=currentSource();if(!source)return;$('sourceTitle').textContent=source.name;$('sourceDescription').textContent=source.description||`ThingSpeak Channel ${source.channel_id}`;$('editSourceBtn').disabled=false;$('addCardBtn').disabled=false;state.cards=source.cards||[];clearNotice();renderCards();await loadData(false)}
 function resetView(){$('sourceTitle').textContent='选择一个数据源';$('sourceDescription').textContent='添加 ThingSpeak Channel 后，在这里查看实时数据。';$('editSourceBtn').disabled=true;$('addCardBtn').disabled=true;state.cards=[];state.feeds=[];state.channel={};state.feedsBySource=new Map();state.channelsBySource=new Map();clearCharts();renderCards()}
 function requiredSourceIds(){const ids=new Set([Number(state.selectedId)]);state.cards.forEach(card=>cardSelections(card).forEach(selection=>ids.add(selection.source_id)));return state.sources.filter(source=>source.enabled&&ids.has(source.id)).map(source=>source.id)}
 function dataQuery(incremental){const params=new URLSearchParams(incremental?{last:'1',offset:'0'}:{offset:'0'});if(!incremental){if(state.customStart||state.customEnd){if(state.customStart)params.set('start',new Date(state.customStart).toISOString());if(state.customEnd)params.set('end',new Date(state.customEnd).toISOString())}else{params.set('start',new Date(Date.now()-state.hours*3600000).toISOString());params.set('end',new Date().toISOString())}}return params}
 async function loadData(incremental=true){if(!state.selectedId)return;const token=++state.requestToken;const key=`${state.selectedId}:${state.customStart||''}:${state.customEnd||''}:${state.hours}`;const isIncremental=incremental&&state.windowKey===key;const sourceIds=requiredSourceIds();state.loading=true;clearNotice();try{const results=await Promise.all(sourceIds.map(async sourceId=>({sourceId,data:await api(`/api/sources/${sourceId}/data?${dataQuery(isIncremental)}`)})));if(token!==state.requestToken)return;const nextFeeds=isIncremental?new Map(state.feedsBySource):new Map();const nextChannels=isIncremental?new Map(state.channelsBySource):new Map();const cutoff=state.customStart?new Date(state.customStart).getTime():Date.now()-state.hours*3600000;const ceiling=state.customEnd?new Date(state.customEnd).getTime():Infinity;results.forEach(({sourceId,data})=>{const incoming=data.feeds||[];if(data.channel)nextChannels.set(sourceId,data.channel);if(isIncremental){const merged=new Map((nextFeeds.get(sourceId)||[]).map(feed=>[feed.entry_id||feed.created_at,feed]));incoming.forEach(feed=>merged.set(feed.entry_id||feed.created_at,feed));nextFeeds.set(sourceId,Array.from(merged.values()).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).filter(feed=>{const timestamp=new Date(feed.created_at).getTime();return timestamp>=cutoff&&timestamp<=ceiling}))}else{nextFeeds.set(sourceId,incoming)}});state.feedsBySource=nextFeeds;state.channelsBySource=nextChannels;state.feeds=nextFeeds.get(state.selectedId)||[];state.channel=nextChannels.get(state.selectedId)||{};state.windowKey=key;const lastFeed=state.feeds[state.feeds.length-1];state.lastEntryId=lastFeed?.entry_id||lastFeed?.created_at||null;renderCards();const total=Array.from(nextFeeds.values()).reduce((sum,feeds)=>sum+feeds.length,0);$('connectionStatus').textContent=sourceIds.length>1?`${sourceIds.length} 个数据源 · ${total} 个采样点`:`${total} 个采样点`}catch(error){if(token!==state.requestToken)return;showNotice(error.message);$('connectionStatus').textContent='连接失败';renderCards()}finally{if(token===state.requestToken)state.loading=false}}
+let activeDataController=null;
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    if(activeDataController)activeDataController.abort();
+  }else if(state.selectedId){
+    loadData(false);
+  }
+});
+loadData=async function(incremental=true){
+  if(!state.selectedId)return;
+  if(document.hidden&&incremental)return;
+  if(incremental&&state.loading)return;
+  if(activeDataController)activeDataController.abort();
+  const controller=new AbortController();
+  activeDataController=controller;
+  const token=++state.requestToken;
+  const key=`${state.selectedId}:${state.customStart||''}:${state.customEnd||''}:${state.hours}`;
+  const isIncremental=incremental&&state.windowKey===key;
+  const sourceIds=requiredSourceIds();
+  state.loading=true;
+  clearNotice();
+  try{
+    const results=await Promise.all(sourceIds.map(async sourceId=>({sourceId,data:await api(`/api/sources/${sourceId}/data?${dataQuery(isIncremental)}`,{signal:controller.signal})})));
+    if(token!==state.requestToken)return;
+    const nextFeeds=isIncremental?new Map(state.feedsBySource):new Map();
+    const nextChannels=isIncremental?new Map(state.channelsBySource):new Map();
+    const cutoff=state.customStart?new Date(state.customStart).getTime():Date.now()-state.hours*3600000;
+    const ceiling=state.customEnd?new Date(state.customEnd).getTime():Infinity;
+    results.forEach(({sourceId,data})=>{
+      const incoming=data.feeds||[];
+      if(data.channel)nextChannels.set(sourceId,data.channel);
+      if(!isIncremental){nextFeeds.set(sourceId,incoming);return}
+      const existing=nextFeeds.get(sourceId)||[];
+      const merged=new Map(existing.map(feed=>[feed.entry_id||feed.created_at,feed]));
+      incoming.forEach(feed=>merged.set(feed.entry_id||feed.created_at,feed));
+      let feeds=Array.from(merged.values());
+      const lastExisting=existing[existing.length-1];
+      if(lastExisting&&incoming.some(feed=>new Date(feed.created_at).getTime()<new Date(lastExisting.created_at).getTime())){
+        feeds.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+      }
+      nextFeeds.set(sourceId,feeds.filter(feed=>{const timestamp=new Date(feed.created_at).getTime();return timestamp>=cutoff&&timestamp<=ceiling}));
+    });
+    state.feedsBySource=nextFeeds;
+    state.channelsBySource=nextChannels;
+    state.feeds=nextFeeds.get(state.selectedId)||[];
+    state.channel=nextChannels.get(state.selectedId)||{};
+    state.windowKey=key;
+    const lastFeed=state.feeds[state.feeds.length-1];
+    state.lastEntryId=lastFeed?.entry_id||lastFeed?.created_at||null;
+    renderCards();
+    const total=Array.from(nextFeeds.values()).reduce((sum,feeds)=>sum+feeds.length,0);
+    $('connectionStatus').textContent=sourceIds.length>1?`${sourceIds.length} 个数据源 · ${total} 个采样点`:`${total} 个采样点`;
+  }catch(error){
+    if(error.name==='AbortError'||token!==state.requestToken)return;
+    showNotice(error.message);
+    $('connectionStatus').textContent='连接失败';
+    renderCards();
+  }finally{
+    if(activeDataController===controller)activeDataController=null;
+    if(token===state.requestToken)state.loading=false;
+  }
+};
+let sourceOrderPending=null;
+let sourceOrderSaving=false;
+function queueSourceOrderSave(){
+  sourceOrderPending=state.sources.map(source=>source.id);
+  if(sourceOrderSaving)return;
+  sourceOrderSaving=true;
+  (async()=>{
+    try{
+      while(sourceOrderPending){
+        const sourceIds=sourceOrderPending;
+        sourceOrderPending=null;
+        await api('/api/sources/order',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({source_ids:sourceIds})});
+      }
+    }catch(error){showNotice(error.message);await loadSources()}
+    finally{sourceOrderSaving=false;if(sourceOrderPending)queueSourceOrderSave()}
+  })();
+}
+function renderSources(){
+  const list=$('sourceList');
+  list.innerHTML='';
+  if(!state.sources.length){list.innerHTML='<div class="empty-mini">暂无数据源</div>';return}
+  state.sources.forEach(source=>{
+    const btn=document.createElement('button');
+    btn.className=`source-item ${source.id===state.selectedId?'active':''} ${source.enabled?'':'source-disabled'}`;
+    btn.dataset.sourceId=String(source.id);
+    btn.draggable=!isTouchDevice;
+    btn.title=isTouchDevice?'长按拖拽调整顺序':'拖拽调整数据源顺序';
+    btn.innerHTML=`<span class="source-name">${escapeHtml(source.name)}</span><span class="source-meta">CH ${escapeHtml(source.channel_id)}${source.enabled?'':' · DISABLED'}</span><span class="source-drag-handle" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></span>`;
+    btn.onclick=()=>{if(!isDraggingSource)selectSource(source.id)};
+    if(isTouchDevice){
+      let touchTimer=null, touchStartY=0, initialRect=null, offsetY=0, wasDragging=false, frame=null, lastTouchY=0, positions=[];
+      const resolveDropPosition=y=>{
+        if(!positions.length)return null;
+        for(const item of positions){
+          if(y<(item.top+item.bottom)/2)return{element:item.element,after:false};
+        }
+        return{element:positions[positions.length-1].element,after:true};
+      };
+      const resetTouchState=()=>{
+        if(touchTimer){clearTimeout(touchTimer);touchTimer=null}
+        if(frame){cancelAnimationFrame(frame);frame=null}
+        btn.style.transform='';btn.classList.remove('touch-dragging');clearSourceDragState();isDraggingSource=false;wasDragging=false;positions=[];
+      };
+      const updateDragPreview=()=>{
+        frame=null;if(!isDraggingSource||!wasDragging)return;
+        const deltaY=lastTouchY-offsetY-initialRect.top;
+        btn.style.transform=`translateY(${deltaY}px)`;
+        const placement=resolveDropPosition(lastTouchY);
+        const targetItem=placement?.element;
+        const insertAfter=Boolean(placement?.after);
+        document.querySelectorAll('#sourceList .source-item').forEach(item=>item.classList.remove('drag-over-top','drag-over-bottom'));
+        if(targetItem)targetItem.classList.add(insertAfter?'drag-over-bottom':'drag-over-top');
+      };
+      btn.addEventListener('touchstart',event=>{
+        if(isDraggingSource)return;
+        touchStartY=event.touches[0].clientY;lastTouchY=touchStartY;initialRect=btn.getBoundingClientRect();offsetY=touchStartY-initialRect.top;wasDragging=false;
+        touchTimer=setTimeout(()=>{isDraggingSource=true;wasDragging=true;btn.classList.add('touch-dragging');positions=Array.from(list.querySelectorAll('.source-item:not(.touch-dragging)')).map(element=>{const rect=element.getBoundingClientRect();return{element,top:rect.top,bottom:rect.bottom}});if(navigator.vibrate)navigator.vibrate(50)},450);
+      },{passive:true});
+      btn.addEventListener('touchmove',event=>{
+        const touch=event.touches[0];lastTouchY=touch.clientY;
+        if(touchTimer&&Math.abs(lastTouchY-touchStartY)>10){clearTimeout(touchTimer);touchTimer=null;return}
+        if(!isDraggingSource||!wasDragging)return;
+        if(event.cancelable)event.preventDefault();if(!frame)frame=requestAnimationFrame(updateDragPreview);
+      },{passive:false});
+      const finishTouchDrag=event=>{
+        if(touchTimer){clearTimeout(touchTimer);touchTimer=null}
+        if(!isDraggingSource||!wasDragging){resetTouchState();return}
+        if(event.cancelable)event.preventDefault();lastTouchY=event.changedTouches[0].clientY;
+        const placement=resolveDropPosition(lastTouchY);
+        const targetItem=placement?.element;
+        const insertAfter=Boolean(placement?.after);
+        const targetSource=targetItem?state.sources.find(item=>item.id===Number(targetItem.dataset.sourceId)):null;
+        resetTouchState();
+        if(targetSource&&targetSource.id!==source.id)moveSource(source.id,targetSource.id,insertAfter);
+      };
+      btn.addEventListener('touchend',finishTouchDrag,{passive:false});
+      btn.addEventListener('touchcancel',resetTouchState);
+    }else{
+      btn.addEventListener('dragstart',event=>{isDraggingSource=true;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(source.id));btn.classList.add('dragging')});
+      btn.addEventListener('dragover',event=>{event.preventDefault();event.dataTransfer.dropEffect='move';const rect=btn.getBoundingClientRect();const after=event.clientY>rect.top+rect.height/2;const targetClass=after?'drag-over-bottom':'drag-over-top';const otherClass=after?'drag-over-top':'drag-over-bottom';if(!btn.classList.contains(targetClass)){document.querySelectorAll('#sourceList .source-item').forEach(item=>{if(item!==btn)item.classList.remove('drag-over-top','drag-over-bottom')});btn.classList.remove(otherClass);btn.classList.add(targetClass)}});
+      btn.addEventListener('dragleave',event=>{if(!btn.contains(event.relatedTarget))btn.classList.remove('drag-over-top','drag-over-bottom')});
+      btn.addEventListener('drop',event=>{event.preventDefault();const sourceId=Number(event.dataTransfer.getData('text/plain'));const rect=btn.getBoundingClientRect();const after=event.clientY>rect.top+rect.height/2;clearSourceDragState();moveSource(sourceId,source.id,after);setTimeout(()=>{isDraggingSource=false},0)});
+      btn.addEventListener('dragend',()=>{clearSourceDragState();setTimeout(()=>{isDraggingSource=false},0)});
+    }
+    list.appendChild(btn);
+  });
+}
 function clearCharts(){state.charts.forEach(chart=>chart.dispose());state.charts.clear();if(chartResizeObserver)chartResizeObserver.disconnect()}
 function visibleSelections(card){return cardSelections(card).filter(selection=>(state.feedsBySource.get(selection.source_id)||[]).some(feed=>{const raw=feed[`field${selection.field_number}`];return raw!==null&&raw!==''&&Number.isFinite(Number(raw))}))}
 function fieldHasDataForSource(sourceId,number){return(state.feedsBySource.get(Number(sourceId))||[]).some(feed=>{const raw=feed[`field${number}`];return raw!==null&&raw!==undefined&&String(raw).trim()!==''&&Number.isFinite(Number(raw))})}
 function fieldHasData(number){return fieldHasDataForSource(state.selectedId,number)}
 function defaultCardSelections(){const source=currentSource();const fields=source?.fields||Array.from({length:8},(_,index)=>({field_number:index+1}));const dataLoaded=state.feedsBySource.has(Number(state.selectedId));const firstAvailable=fields.find(field=>!dataLoaded||fieldHasData(field.field_number));return[{source_id:Number(state.selectedId),field_number:Number(firstAvailable?.field_number||1)}]}
 function cardPointCount(card){const ids=new Set(cardSelections(card).map(selection=>selection.source_id));return Array.from(ids).reduce((total,sourceId)=>total+(state.feedsBySource.get(sourceId)||[]).length,0)}
-function renderCards(){clearCharts();const grid=$('cardsGrid');grid.innerHTML='';const hasSource=Boolean(state.selectedId);$('cardAddRow').classList.toggle('hidden',!hasSource||!state.cards.length);$('emptyState').classList.toggle('hidden',!hasSource||state.cards.length>0);if(!hasSource){grid.innerHTML='<div class="empty-state inline-empty"><div class="empty-icon">◌</div><h3>选择一个数据源开始</h3><p>从左侧选择已有数据源，或先创建一个新的 Channel。</p></div>';return}state.cards.forEach((card,index)=>{const article=document.createElement('article');article.className='dashboard-card';article.dataset.cardId=card.id;const selections=cardSelections(card);const fieldLabel=selections.map(selection=>selectionName(selection,selections)).join(' · ');const points=cardPointCount(card);article.innerHTML=`<div class="card-head"><div class="card-heading"><span class="panel-kicker">CARD ${String(index+1).padStart(2,'0')} · ${escapeHtml(chartNames[card.chart_type]||'图表')}</span><h2>${escapeHtml(card.title)}</h2><p>${escapeHtml(fieldLabel)} <span class="card-count">${selections.length} fields</span></p></div><div class="card-actions"><button class="card-icon" data-action="edit" title="编辑卡片" aria-label="编辑卡片">${iconSvg('edit')}</button>${card.share_enabled?`<button class="card-icon" data-action="share" title="复制分享链接" aria-label="复制分享链接">${iconSvg('share')}</button>`:''}<button class="card-icon" data-action="fullscreen" title="全屏查看" aria-label="全屏查看">${iconSvg('fullscreen')}</button></div></div>${card.show_stats?'<div class="card-stats" id="stats-'+card.id+'"></div>':''}<div class="card-chart" id="chart-${card.id}"></div><div class="card-foot"><span>${card.share_enabled?'SHARE ENABLED':'PRIVATE CARD'}</span><span>${points?`UPDATED ${new Date().toLocaleTimeString('zh-CN',{hour12:false})}`:'WAITING FOR DATA'}</span></div>`;article.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>cardAction(button.dataset.action,card,article));grid.appendChild(article);renderCardChart(card,article.querySelector('.card-chart'));if(card.show_stats)renderCardStats(card,$(`stats-${card.id}`))})}
-function renderCardChart(card,element){const mobile=mobileChartMode();const selections=visibleSelections(card);if(!selections.length){const old=state.charts.get(card.id);if(old){old.dispose();state.charts.delete(card.id)}element.innerHTML='<div class="chart-empty"><span>NO NUMERIC DATA</span><strong>暂无可用数据</strong></div>';return}let chart=state.charts.get(card.id);if(!chart)chart=echarts.init(element,null,{renderer:mobile?'svg':'canvas'});state.charts.set(card.id,chart);observeChart(element);const zoom=readDataZoom(chart);const type=card.chart_type==='area'?'line':card.chart_type;const series=selections.map((selection,index)=>{const color=colors[index%colors.length];const feeds=state.feedsBySource.get(selection.source_id)||[];const item={name:selectionName(selection,selections),type,smooth:mobile?false:card.chart_type!=='bar',connectNulls:true,sampling:mobile&&type==='line'?'lttb':undefined,showSymbol:true,symbol:'circle',symbolSize:mobile?3:5,showAllSymbol:'auto',emphasis:{scale:true,symbolSize:mobile?6:8},data:feeds.map(feed=>{const raw=feed[`field${selection.field_number}`];if(raw===null||raw===undefined||raw==='')return[new Date(feed.created_at).getTime(),null];const num=Number(raw);return[new Date(feed.created_at).getTime(),Number.isFinite(num)?num:null]}),lineStyle:{width:2,color,cap:'round',join:'round'},itemStyle:{color},areaStyle:card.chart_type==='area'?{opacity:.14,color}:undefined};if(type==='bar')item.barMaxWidth=20;return item});chart.setOption({animation:!mobile,animationDuration:mobile?0:450,backgroundColor:'transparent',color:colors,tooltip:{trigger:'axis',backgroundColor:'#16212b',borderColor:'#314352',textStyle:{color:'#e8eef2'},axisPointer:{type:'line'}},legend:{top:0,right:0,textStyle:{color:'#94a3af',fontSize:11}},grid:{left:48,right:24,top:38,bottom:38},xAxis:{type:'time',boundaryGap:card.chart_type==='bar',axisLine:{lineStyle:{color:'#30404d'}},axisLabel:{color:'#718391',fontSize:10,formatter:value=>new Date(value).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}},yAxis:{type:'value',min:card.y_axis_min===null||card.y_axis_min===''?null:Number(card.y_axis_min),splitLine:{lineStyle:{color:'#23313c'}},axisLabel:{color:'#718391',fontSize:10}},dataZoom:[{type:'inside',...zoom},{type:'slider',height:14,bottom:0,borderColor:'#263442',backgroundColor:'#111a22',fillerColor:'#2d3d48',...zoom}],series},{notMerge:true});chart.resize()}
+function cardRenderKey(card){return JSON.stringify([card.id,card.title,card.chart_type,card.y_axis_min,card.show_stats,card.share_enabled,card.field_selections,card.field_numbers])}
+function renderCards(){clearCharts();const grid=$('cardsGrid');grid.innerHTML='';const hasSource=Boolean(state.selectedId);$('cardAddRow').classList.toggle('hidden',!hasSource||!state.cards.length);$('emptyState').classList.toggle('hidden',!hasSource||state.cards.length>0);if(!hasSource){grid.innerHTML='<div class="empty-state inline-empty"><div class="empty-icon">◌</div><h3>选择一个数据源开始</h3><p>从左侧选择已有数据源，或先创建一个新的 Channel。</p></div>';return}state.cards.forEach((card,index)=>{const article=document.createElement('article');article.className='dashboard-card';article.dataset.cardId=card.id;article.dataset.renderKey=cardRenderKey(card);const selections=cardSelections(card);const fieldLabel=selections.map(selection=>selectionName(selection,selections)).join(' · ');const points=cardPointCount(card);article.innerHTML=`<div class="card-head"><div class="card-heading"><span class="panel-kicker">CARD ${String(index+1).padStart(2,'0')} · ${escapeHtml(chartNames[card.chart_type]||'图表')}</span><h2>${escapeHtml(card.title)}</h2><p>${escapeHtml(fieldLabel)} <span class="card-count">${selections.length} fields</span></p></div><div class="card-actions"><button class="card-icon" data-action="edit" title="编辑卡片" aria-label="编辑卡片">${iconSvg('edit')}</button>${card.share_enabled?`<button class="card-icon" data-action="share" title="复制分享链接" aria-label="复制分享链接">${iconSvg('share')}</button>`:''}<button class="card-icon" data-action="fullscreen" title="全屏查看" aria-label="全屏查看">${iconSvg('fullscreen')}</button></div></div>${card.show_stats?'<div class="card-stats" id="stats-'+card.id+'"></div>':''}<div class="card-chart" id="chart-${card.id}"></div><div class="card-foot"><span>${card.share_enabled?'SHARE ENABLED':'PRIVATE CARD'}</span><span>${points?`UPDATED ${new Date().toLocaleTimeString('zh-CN',{hour12:false})}`:'WAITING FOR DATA'}</span></div>`;article.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>cardAction(button.dataset.action,card,article));grid.appendChild(article);renderCardChart(card,article.querySelector('.card-chart'));if(card.show_stats)renderCardStats(card,$(`stats-${card.id}`))})}
+function renderCardChart(card,element){
+  const mobile=mobileChartMode();
+  const selections=visibleSelections(card);
+  if(!selections.length){
+    const old=state.charts.get(card.id);
+    if(old){old.dispose();state.charts.delete(card.id)}
+    element.innerHTML='<div class="chart-empty"><span>NO NUMERIC DATA</span><strong>暂无可用数据</strong></div>';
+    return;
+  }
+  if(!state.charts.has(card.id)&&element.querySelector('.chart-empty'))element.innerHTML='';
+  let chart=state.charts.get(card.id);
+  if(!chart)chart=echarts.init(element,null,{renderer:mobile?'svg':'canvas'});
+  state.charts.set(card.id,chart);
+  observeChart(element);
+  const zoom=readDataZoom(chart);
+  const type=card.chart_type==='area'?'line':card.chart_type;
+  const series=selections.map((selection,index)=>{
+    const color=colors[index%colors.length];
+    const feeds=state.feedsBySource.get(selection.source_id)||[];
+    const dense=feeds.length>500;
+    const item={name:selectionName(selection,selections),type,smooth:mobile?false:card.chart_type!=='bar',connectNulls:true,sampling:type==='line'&&feeds.length>1000?'lttb':undefined,showSymbol:mobile||!dense,symbol:'circle',symbolSize:mobile?3:5,showAllSymbol:mobile?'auto':false,emphasis:{scale:true,symbolSize:mobile?6:8},data:feeds.map(feed=>{const raw=feed[`field${selection.field_number}`];if(raw===null||raw===undefined||raw==='')return[new Date(feed.created_at).getTime(),null];const num=Number(raw);return[new Date(feed.created_at).getTime(),Number.isFinite(num)?num:null]}),lineStyle:{width:2,color,cap:'round',join:'round'},itemStyle:{color},areaStyle:card.chart_type==='area'?{opacity:.14,color}:undefined};
+    if(type==='bar')item.barMaxWidth=20;
+    return item;
+  });
+  const pointCount=series.reduce((total,item)=>total+item.data.length,0);
+  chart.setOption({animation:!mobile&&pointCount<2000,animationDuration:mobile||pointCount>=2000?0:450,backgroundColor:'transparent',color:colors,tooltip:{trigger:'axis',backgroundColor:'#16212b',borderColor:'#314352',textStyle:{color:'#e8eef2'},axisPointer:{type:'line'}},legend:{top:0,right:0,textStyle:{color:'#94a3af',fontSize:11}},grid:{left:48,right:24,top:38,bottom:38},xAxis:{type:'time',boundaryGap:card.chart_type==='bar',axisLine:{lineStyle:{color:'#30404d'}},axisLabel:{color:'#718391',fontSize:10,formatter:value=>new Date(value).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}},yAxis:{type:'value',min:card.y_axis_min===null||card.y_axis_min===''?null:Number(card.y_axis_min),splitLine:{lineStyle:{color:'#23313c'}},axisLabel:{color:'#718391',fontSize:10}},dataZoom:[{type:'inside',...zoom},{type:'slider',height:14,bottom:0,borderColor:'#263442',backgroundColor:'#111a22',fillerColor:'#2d3d48',...zoom}],series},{notMerge:true});
+  chart.resize();
+}
 // notMerge:true 会重置 dataZoom，自动刷新时把用户在手机上双指缩放的范围还原回去
 function readDataZoom(chart){try{const item=chart.getOption?.()?.dataZoom?.[0];if(!item)return{};const{start,end}=item;if(typeof start!=='number'||typeof end!=='number')return{};if(start<=0&&end>=100)return{};return{start,end}}catch(error){return{}}}
 function renderCardStats(card,container){if(!container)return;const selections=cardSelections(card);const metrics=[['当前值',(values)=>values[values.length-1]],['最大值',values=>Math.max(...values)],['最小值',values=>Math.min(...values)],['平均值',values=>values.reduce((a,b)=>a+b,0)/values.length]];container.innerHTML=metrics.map(([label,compute])=>{const values=selections.map((selection,index)=>{const list=(state.feedsBySource.get(selection.source_id)||[]).map(feed=>{const raw=feed[`field${selection.field_number}`];if(raw===null||raw===undefined||raw==='')return NaN;return Number(raw)}).filter(Number.isFinite);const name=selectionName(selection,selections);return list.length?`<span style="--swatch:${colors[index%colors.length]}" title="${escapeHtml(name)}"><em>${escapeHtml(name)}</em><b>${formatNumber(compute(list))}</b></span>`:'<span class="stat-empty">--</span>'}).join('');return `<div class="stat-block"><small>${label}</small><div>${values}</div></div>`}).join('')}
@@ -92,8 +269,20 @@ async function confirmDelete(){const pending=state.pendingDelete;if(!pending)ret
 async function copyShareLink(card){if(!card.share_token)return;const url=`${location.origin}/share/${card.share_token}`;try{await navigator.clipboard.writeText(url);showNotice('分享链接已复制')}catch(error){window.prompt('复制分享链接',url)}}
 async function toggleFullscreen(element){try{if(document.fullscreenElement)await document.exitFullscreen();else await element.requestFullscreen()}catch(error){showNotice('当前浏览器不支持全屏访问')}}
 function deleteSelected(){const source=currentSource();if(source)requestDelete('source',source)}
-function scheduleRefresh(){if(state.refreshTimer)clearInterval(state.refreshTimer);const seconds=Number($('refreshSelect').value);if(seconds)state.refreshTimer=setInterval(loadData,seconds*1000)}
-function refreshRenderedCards(){const articles=Array.from(document.querySelectorAll('#cardsGrid .dashboard-card'));if(articles.length!==state.cards.length)return false;return articles.every(article=>{const card=state.cards.find(item=>String(item.id)===article.dataset.cardId);if(!card)return false;const chartElement=article.querySelector('.card-chart');renderCardChart(card,chartElement);const statsElement=article.querySelector('.card-stats');if(card.show_stats&&statsElement)renderCardStats(card,statsElement);return true})}
+let refreshGeneration=0;
+function scheduleRefresh(){
+  if(state.refreshTimer)clearTimeout(state.refreshTimer);
+  const generation=++refreshGeneration;
+  const seconds=Number($('refreshSelect').value);
+  if(!seconds)return;
+  const tick=async()=>{
+    if(generation!==refreshGeneration)return;
+    await loadData(true);
+    if(generation===refreshGeneration)state.refreshTimer=setTimeout(tick,seconds*1000);
+  };
+  state.refreshTimer=setTimeout(tick,seconds*1000);
+}
+function refreshRenderedCards(){const articles=Array.from(document.querySelectorAll('#cardsGrid .dashboard-card'));if(articles.length!==state.cards.length)return false;return articles.every(article=>{const card=state.cards.find(item=>String(item.id)===article.dataset.cardId);if(!card||article.dataset.renderKey!==cardRenderKey(card))return false;const chartElement=article.querySelector('.card-chart');renderCardChart(card,chartElement);const statsElement=article.querySelector('.card-stats');if(card.show_stats&&statsElement)renderCardStats(card,statsElement);const foot=article.querySelector('.card-foot span:last-child');if(foot)foot.textContent=cardPointCount(card)?`UPDATED ${new Date().toLocaleTimeString('zh-CN',{hour12:false})}`:'WAITING FOR DATA';return true})}
 const rebuildCards=renderCards;
-renderCards=function(){const fullscreenCard=document.fullscreenElement?.closest('.dashboard-card');if(fullscreenCard&&refreshRenderedCards())return;rebuildCards()};
+renderCards=function(){if(state.selectedId&&state.cards.length&&refreshRenderedCards())return;rebuildCards()};
 document.addEventListener('DOMContentLoaded',()=>{$('addSourceBtn').onclick=()=>openDialog();$('editSourceBtn').onclick=()=>openDialog(currentSource());$('addCardBtn').onclick=()=>openCardDialog();$('emptyAddCardBtn').onclick=()=>openCardDialog();$('deleteSourceFromDialogBtn').onclick=deleteSelected;$('deleteCardFromDialogBtn').onclick=()=>{const card=state.cards.find(item=>String(item.id)===$('cardId').value);if(card)requestDelete('card',card)};$('confirmDeleteBtn').onclick=confirmDelete;$('cancelDeleteBtn').onclick=()=>{state.pendingDelete=null;$('confirmDialog').close()};$('refreshNowBtn').onclick=loadData;$('refreshSelect').onchange=scheduleRefresh;$('sourceForm').addEventListener('submit',saveSource);$('closeSourceBtn').onclick=()=>$('sourceDialog').close();$('cancelSourceBtn').onclick=()=>$('sourceDialog').close();$('closeCardBtn').onclick=()=>$('cardDialog').close();$('cancelCardBtn').onclick=()=>$('cardDialog').close();$('cardForm').addEventListener('submit',saveCard);$('cardShareInput').onchange=()=>{updateSharePreview(state.cards.find(card=>String(card.id)===$('cardId').value));updateShareWindowVisibility()};$('shareWindowOptions').addEventListener('click',event=>{const button=event.target.closest('button');if(button)toggleShareWindowOption(Number(button.dataset.windowHours))});$('customToggle').onclick=()=>$('customRange').classList.toggle('hidden');$('applyCustomBtn').onclick=()=>{state.customStart=$('customStart').value;state.customEnd=$('customEnd').value;state.windowKey='';loadData(false)};$('rangeButtons').addEventListener('click',event=>{const button=event.target.closest('button');if(!button)return;document.querySelectorAll('#rangeButtons button').forEach(item=>item.classList.remove('active'));button.classList.add('active');state.customStart=null;state.customEnd=null;state.hours=Number(button.dataset.hours);state.windowKey='';loadData(false)});$('menuToggle').onclick=toggleSidebar;$('sidebarBackdrop').onclick=closeSidebar;if(window.innerWidth<=900)document.querySelector('.sidebar')?.setAttribute('aria-hidden','true');document.addEventListener('keydown',event=>{if(event.key==='Escape')closeSidebar()});document.addEventListener('fullscreenchange',()=>{requestAnimationFrame(()=>state.charts.forEach(chart=>chart.resize()))});window.addEventListener('orientationchange',()=>{setTimeout(()=>state.charts.forEach(chart=>chart.resize()),250)});window.addEventListener('resize',()=>{const shell=document.querySelector('.app-shell');if(window.innerWidth>900){shell?.classList.remove('sidebar-open');setScrollLock(false);document.querySelector('.sidebar')?.removeAttribute('aria-hidden')}else{shell?.classList.remove('sidebar-collapsed')}const button=$('menuToggle');const open=window.innerWidth>900?!shell?.classList.contains('sidebar-collapsed'):shell?.classList.contains('sidebar-open');button?.setAttribute('aria-expanded',String(open));button?.setAttribute('aria-label',open?'关闭数据源菜单':'打开数据源菜单');state.charts.forEach(chart=>chart.resize())});setInterval(()=>$('clock').textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false}),1000);loadSources();scheduleRefresh()});
