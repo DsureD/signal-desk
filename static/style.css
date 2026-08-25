@@ -54,6 +54,7 @@
 .share-toolbar strong{font-size:12px;color:var(--text);font-weight:600;margin-right:auto}.share-window-settings{border-top:1px solid var(--line);padding-top:14px;margin-top:3px}.share-window-settings label{margin-bottom:10px}.share-window-settings select{display:block;width:100%;margin-top:7px;border:1px solid var(--line);background:#0e151c;color:var(--text);border-radius:5px;padding:10px 11px;outline:none}.share-window-settings .custom-range{margin-top:2px}.share-window-settings .custom-range input{width:calc(50% - 14px);margin:0}@media(max-width:600px){.share-toolbar{align-items:center}.share-toolbar strong{margin-right:auto}.share-window-settings .custom-range{flex-wrap:wrap}.share-window-settings .custom-range input{width:135px}}
 .share-window-options{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.share-window-options button{border:1px solid var(--line);background:#0e151c;color:var(--muted);border-radius:5px;padding:8px 10px;font:500 11px 'DM Mono',monospace}.share-window-options button:hover{border-color:var(--accent);color:var(--accent)}.share-window-options button.active{background:var(--accent);border-color:var(--accent);color:#19230f}.share-window-settings .custom-range{display:flex;align-items:center;gap:6px}
 .share-public-options{display:flex;flex-wrap:wrap;gap:5px;margin-left:4px}.share-public-options button{border:1px solid var(--line);background:#0e151c;color:var(--muted);border-radius:5px;padding:6px 9px;font:500 10px 'DM Mono',monospace}.share-public-options button:hover{border-color:var(--accent);color:var(--accent)}.share-public-options button.active{background:var(--accent);border-color:var(--accent);color:#19230f}@media(max-width:600px){.share-public-options{order:3;width:100%;margin-left:0}.share-toolbar{flex-wrap:wrap}.share-toolbar strong{margin-left:auto}}
+.share-auto-refresh{display:inline-flex;align-items:center;gap:7px;margin:0;color:var(--muted);font-size:11px;white-space:nowrap;cursor:pointer}.share-auto-refresh-label{color:var(--text);font-weight:600}.share-auto-refresh input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.share-switch{width:30px;height:18px;padding:2px;border:1px solid #40515d;border-radius:999px;background:#0e151c;transition:background .2s,border-color .2s}.share-switch span{display:block;width:12px;height:12px;border-radius:50%;background:#718391;transition:transform .2s,background .2s}.share-auto-refresh input:checked+.share-switch{border-color:var(--accent);background:rgba(200,241,105,.18)}.share-auto-refresh input:checked+.share-switch span{background:var(--accent);transform:translateX(12px)}.share-auto-refresh input:focus-visible+.share-switch{outline:2px solid var(--accent);outline-offset:2px}.share-auto-refresh small{min-width:43px;color:#718391;font:10px 'DM Mono',monospace}.share-auto-refresh input:checked~small{color:var(--accent-2)}
 
 /* ==========================================================================
    移动端修复层（追加覆盖，按断点从宽到窄排列以保证级联顺序正确）
@@ -281,7 +282,8 @@ dialog[open]{display:flex;flex-direction:column}
   .share-toolbar .toolbar-label{grid-column:1/-1}
   .share-public-options{grid-column:1/-1;width:100%;margin-left:0;order:0}
   .share-toolbar strong{margin:0;grid-column:1;justify-self:start}
-  .share-refresh{grid-column:2;justify-self:end;align-self:center}
+  .share-auto-refresh{grid-column:1;grid-row:4;justify-self:start;min-height:44px}
+  .share-refresh{grid-column:2;grid-row:4;justify-self:end;align-self:center}
   .share-heading{gap:12px}
 }
 @media(max-width:600px){
