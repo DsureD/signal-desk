@@ -1,6 +1,9 @@
 const state={sources:[],selectedId:null,hours:24,refreshTimer:null,charts:new Map(),feeds:[],channel:{},feedsBySource:new Map(),channelsBySource:new Map(),cards:[],loading:false,requestToken:0,windowKey:'',lastEntryId:null,customStart:null,customEnd:null,noticeTimer:null,pendingDelete:null};
 let sourceOrderSave=Promise.resolve();
 let isDraggingSource=false;
+let activeTouchReset=null;
+let activePointerReset=null;
+let suppressSourceClick=false;
 let cardFieldSelections=[];
 let activeCardSourceId=null;
 const channelMetadataRequests=new Map();
@@ -50,7 +53,8 @@ async function ensureSourceChannel(sourceId){sourceId=Number(sourceId);if(state.
 async function activateCardSource(sourceId){activeCardSourceId=Number(sourceId);renderFieldSourceTabs();const source=state.sources.find(item=>item.id===activeCardSourceId);if(source?.enabled&&!state.channelsBySource.has(activeCardSourceId)){$('cardFields').setAttribute('aria-busy','true');$('cardFields').innerHTML='<div class="field-picker-loading"><span></span>读取 Field 名称</div>';await ensureSourceChannel(activeCardSourceId)}if(activeCardSourceId===Number(sourceId)){$('cardFields').removeAttribute('aria-busy');renderFieldPicker(activeCardSourceId)}}
 function iconSvg(name){const paths={edit:'<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"></path>',share:'<path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>',fullscreen:'<path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path>'};return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]||''}</svg>`}
 function mobileChartMode(){return window.matchMedia?.('(max-width:900px)').matches}
-function clearSourceDragState(){document.querySelectorAll('#sourceList .source-item').forEach(item=>item.classList.remove('dragging','drag-over-top','drag-over-bottom'))}
+function clearSourceDragState(){document.querySelectorAll('#sourceList .source-item').forEach(item=>item.classList.remove('dragging','drag-over-top','drag-over-bottom','touch-dragging'))}
+function resetSourceDragState(){if(activeTouchReset)activeTouchReset();if(activePointerReset)activePointerReset();clearSourceDragState();isDraggingSource=false}
 function queueSourceOrderSave(){const sourceIds=state.sources.map(source=>source.id);sourceOrderSave=sourceOrderSave.then(()=>api('/api/sources/order',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({source_ids:sourceIds})})).catch(error=>{showNotice(error.message);return loadSources()})}
 function moveSource(sourceId,targetId,after){const fromIndex=state.sources.findIndex(source=>source.id===sourceId);const targetIndex=state.sources.findIndex(source=>source.id===targetId);if(fromIndex<0||targetIndex<0||fromIndex===targetIndex)return;const [source]=state.sources.splice(fromIndex,1);let insertIndex=targetIndex+(after?1:0);if(fromIndex<insertIndex)insertIndex-=1;state.sources.splice(insertIndex,0,source);renderSources();queueSourceOrderSave()}
 function renderSources(){const list=$('sourceList');list.innerHTML='';if(!state.sources.length){list.innerHTML='<div class="empty-mini">暂无数据源</div>';return}state.sources.forEach(source=>{const btn=document.createElement('button');btn.className=`source-item ${source.id===state.selectedId?'active':''} ${source.enabled?'':'source-disabled'}`;btn.draggable=!isTouchDevice;if(!isTouchDevice)btn.title='拖拽调整数据源顺序';else btn.title='长按拖拽调整顺序';btn.innerHTML=`<span class="source-name">${escapeHtml(source.name)}</span><span class="source-meta">CH ${escapeHtml(source.channel_id)}${source.enabled?'':' · DISABLED'}</span>${isTouchDevice?'<span class="source-drag-handle" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></span>':'<span class="source-drag-handle" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></span>'}`;btn.onclick=()=>{if(isDraggingSource)return;selectSource(source.id)};if(isTouchDevice){let touchTimer=null;let touchStartY=0;let initialRect=null;let offsetY=0;let wasDragging=false;const resetTouchState=()=>{if(touchTimer){clearTimeout(touchTimer);touchTimer=null}btn.style.transform='';btn.classList.remove('touch-dragging');clearSourceDragState();isDraggingSource=false;wasDragging=false};btn.addEventListener('touchstart',event=>{if(isDraggingSource)return;touchStartY=event.touches[0].clientY;initialRect=btn.getBoundingClientRect();offsetY=touchStartY-initialRect.top;wasDragging=false;touchTimer=setTimeout(()=>{isDraggingSource=true;wasDragging=true;btn.classList.add('touch-dragging');if(navigator.vibrate)navigator.vibrate(50)},500)},{passive:true});btn.addEventListener('touchmove',event=>{if(touchTimer&&Math.abs(event.touches[0].clientY-touchStartY)>10){clearTimeout(touchTimer);touchTimer=null;return}if(!isDraggingSource||!wasDragging)return;event.preventDefault();const touch=event.touches[0];const deltaY=touch.clientY-offsetY-initialRect.top;btn.style.transform=`translateY(${deltaY}px)`;const items=Array.from(list.querySelectorAll('.source-item:not(.touch-dragging)'));let targetItem=null;let insertAfter=false;for(const item of items){const rect=item.getBoundingClientRect();if(touch.clientY>=rect.top&&touch.clientY<=rect.bottom){targetItem=item;insertAfter=touch.clientY>rect.top+rect.height/2;break}}items.forEach(item=>item.classList.remove('drag-over-top','drag-over-bottom'));if(targetItem){targetItem.classList.add(insertAfter?'drag-over-bottom':'drag-over-top')}},{passive:false});btn.addEventListener('touchend',event=>{if(touchTimer){clearTimeout(touchTimer);touchTimer=null}if(!isDraggingSource||!wasDragging){resetTouchState();return}event.preventDefault();const touch=event.changedTouches[0];const items=Array.from(list.querySelectorAll('.source-item:not(.touch-dragging)'));let targetItem=null;let insertAfter=false;for(const item of items){const rect=item.getBoundingClientRect();if(touch.clientY>=rect.top&&touch.clientY<=rect.bottom){targetItem=item;insertAfter=touch.clientY>rect.top+rect.height/2;break}}resetTouchState();if(targetItem){const targetSource=state.sources.find(s=>targetItem.textContent.includes(s.name));if(targetSource&&targetSource.id!==source.id){moveSource(source.id,targetSource.id,insertAfter)}}},{passive:false});btn.addEventListener('touchcancel',()=>{resetTouchState()})}else{btn.addEventListener('dragstart',event=>{isDraggingSource=true;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(source.id));btn.classList.add('dragging')});btn.addEventListener('dragover',event=>{event.preventDefault();event.dataTransfer.dropEffect='move';const rect=btn.getBoundingClientRect();const after=event.clientY>rect.top+rect.height/2;const targetClass=after?'drag-over-bottom':'drag-over-top';const otherClass=after?'drag-over-top':'drag-over-bottom';if(!btn.classList.contains(targetClass)){document.querySelectorAll('#sourceList .source-item').forEach(item=>{if(item!==btn){item.classList.remove('drag-over-top','drag-over-bottom')}});btn.classList.remove(otherClass);btn.classList.add(targetClass)}});btn.addEventListener('dragleave',event=>{if(!btn.contains(event.relatedTarget)){btn.classList.remove('drag-over-top','drag-over-bottom')}});btn.addEventListener('drop',event=>{event.preventDefault();const sourceId=Number(event.dataTransfer.getData('text/plain'));const rect=btn.getBoundingClientRect();const after=event.clientY>rect.top+rect.height/2;clearSourceDragState();moveSource(sourceId,source.id,after);setTimeout(()=>{isDraggingSource=false},0)});btn.addEventListener('dragend',()=>{clearSourceDragState();setTimeout(()=>{isDraggingSource=false},0)})}list.appendChild(btn)})}
@@ -63,11 +67,17 @@ async function loadData(incremental=true){if(!state.selectedId)return;const toke
 let activeDataController=null;
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){
+    resetSourceDragState();
     if(activeDataController)activeDataController.abort();
   }else if(state.selectedId){
     loadData(false);
   }
 });
+window.addEventListener('pagehide',resetSourceDragState);
+window.addEventListener('blur',resetSourceDragState);
+window.addEventListener('pointerup',event=>{if(event.pointerType==='mouse'&&activePointerReset)activePointerReset()});
+window.addEventListener('pointercancel',resetSourceDragState);
+window.addEventListener('contextmenu',resetSourceDragState);
 loadData=async function(incremental=true){
   if(!state.selectedId)return;
   if(document.hidden&&incremental)return;
@@ -141,16 +151,17 @@ function queueSourceOrderSave(){
 }
 function renderSources(){
   const list=$('sourceList');
+  resetSourceDragState();
   list.innerHTML='';
   if(!state.sources.length){list.innerHTML='<div class="empty-mini">暂无数据源</div>';return}
   state.sources.forEach(source=>{
     const btn=document.createElement('button');
     btn.className=`source-item ${source.id===state.selectedId?'active':''} ${source.enabled?'':'source-disabled'}`;
     btn.dataset.sourceId=String(source.id);
-    btn.draggable=!isTouchDevice;
+    btn.draggable=false;
     btn.title=isTouchDevice?'长按拖拽调整顺序':'拖拽调整数据源顺序';
     btn.innerHTML=`<span class="source-name">${escapeHtml(source.name)}</span><span class="source-meta">CH ${escapeHtml(source.channel_id)}${source.enabled?'':' · DISABLED'}</span><span class="source-drag-handle" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></span>`;
-    btn.onclick=()=>{if(!isDraggingSource)selectSource(source.id)};
+    btn.onclick=()=>{if(isDraggingSource||suppressSourceClick){suppressSourceClick=false;return}selectSource(source.id)};
     if(isTouchDevice){
       let touchTimer=null, touchStartY=0, initialRect=null, offsetY=0, wasDragging=false, frame=null, lastTouchY=0, positions=[];
       const resolveDropPosition=y=>{
@@ -163,7 +174,8 @@ function renderSources(){
       const resetTouchState=()=>{
         if(touchTimer){clearTimeout(touchTimer);touchTimer=null}
         if(frame){cancelAnimationFrame(frame);frame=null}
-        btn.style.transform='';btn.classList.remove('touch-dragging');clearSourceDragState();isDraggingSource=false;wasDragging=false;positions=[];
+        if(activeTouchReset===resetTouchState)activeTouchReset=null;
+        btn.style.transform='';clearSourceDragState();isDraggingSource=false;wasDragging=false;positions=[];
       };
       const updateDragPreview=()=>{
         frame=null;if(!isDraggingSource||!wasDragging)return;
@@ -177,8 +189,9 @@ function renderSources(){
       };
       btn.addEventListener('touchstart',event=>{
         if(isDraggingSource)return;
+        activeTouchReset=resetTouchState;
         touchStartY=event.touches[0].clientY;lastTouchY=touchStartY;initialRect=btn.getBoundingClientRect();offsetY=touchStartY-initialRect.top;wasDragging=false;
-        touchTimer=setTimeout(()=>{isDraggingSource=true;wasDragging=true;btn.classList.add('touch-dragging');positions=Array.from(list.querySelectorAll('.source-item:not(.touch-dragging)')).map(element=>{const rect=element.getBoundingClientRect();return{element,top:rect.top,bottom:rect.bottom}});if(navigator.vibrate)navigator.vibrate(50)},450);
+        touchTimer=setTimeout(()=>{if(document.hidden)return;isDraggingSource=true;wasDragging=true;btn.classList.add('touch-dragging');positions=Array.from(list.querySelectorAll('.source-item:not(.touch-dragging)')).map(element=>{const rect=element.getBoundingClientRect();return{element,top:rect.top,bottom:rect.bottom}});if(navigator.vibrate)navigator.vibrate(50)},450);
       },{passive:true});
       btn.addEventListener('touchmove',event=>{
         const touch=event.touches[0];lastTouchY=touch.clientY;
@@ -200,11 +213,54 @@ function renderSources(){
       btn.addEventListener('touchend',finishTouchDrag,{passive:false});
       btn.addEventListener('touchcancel',resetTouchState);
     }else{
-      btn.addEventListener('dragstart',event=>{isDraggingSource=true;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(source.id));btn.classList.add('dragging')});
-      btn.addEventListener('dragover',event=>{event.preventDefault();event.dataTransfer.dropEffect='move';const rect=btn.getBoundingClientRect();const after=event.clientY>rect.top+rect.height/2;const targetClass=after?'drag-over-bottom':'drag-over-top';const otherClass=after?'drag-over-top':'drag-over-bottom';if(!btn.classList.contains(targetClass)){document.querySelectorAll('#sourceList .source-item').forEach(item=>{if(item!==btn)item.classList.remove('drag-over-top','drag-over-bottom')});btn.classList.remove(otherClass);btn.classList.add(targetClass)}});
-      btn.addEventListener('dragleave',event=>{if(!btn.contains(event.relatedTarget))btn.classList.remove('drag-over-top','drag-over-bottom')});
-      btn.addEventListener('drop',event=>{event.preventDefault();const sourceId=Number(event.dataTransfer.getData('text/plain'));const rect=btn.getBoundingClientRect();const after=event.clientY>rect.top+rect.height/2;clearSourceDragState();moveSource(sourceId,source.id,after);setTimeout(()=>{isDraggingSource=false},0)});
-      btn.addEventListener('dragend',()=>{clearSourceDragState();setTimeout(()=>{isDraggingSource=false},0)});
+      let pointerId=null,pointerStartY=0,pointerDragging=false,lastPointerY=0;
+      const resolvePointerDropPosition=y=>{
+        const items=Array.from(list.querySelectorAll('.source-item')).filter(item=>item!==btn);
+        for(const item of items){
+          const rect=item.getBoundingClientRect();
+          if(y<(rect.top+rect.bottom)/2)return{item,after:false};
+        }
+        return items.length?{item:items[items.length-1],after:true}:null;
+      };
+      const resetPointerState=()=>{
+        if(activePointerReset===resetPointerState)activePointerReset=null;
+        const capturedPointerId=pointerId;
+        pointerId=null;pointerDragging=false;lastPointerY=0;btn.style.transform='';
+        if(capturedPointerId!==null&&btn.hasPointerCapture?.(capturedPointerId))btn.releasePointerCapture(capturedPointerId);
+        clearSourceDragState();isDraggingSource=false;
+      };
+      const finishPointerDrag=event=>{
+        if(pointerId===null||event.pointerId!==pointerId)return;
+        const wasDragging=pointerDragging;
+        const placement=wasDragging?resolvePointerDropPosition(event.clientY):null;
+        const targetSource=placement?state.sources.find(item=>item.id===Number(placement.item.dataset.sourceId)):null;
+        if(wasDragging&&event.cancelable)event.preventDefault();
+        resetPointerState();
+        if(wasDragging&&targetSource&&targetSource.id!==source.id)moveSource(source.id,targetSource.id,placement.after);
+      };
+      btn.addEventListener('pointerdown',event=>{
+        if(event.pointerType!=='mouse'||event.button!==0||isDraggingSource)return;
+        resetSourceDragState();
+        pointerId=event.pointerId;pointerStartY=event.clientY;lastPointerY=event.clientY;pointerDragging=false;activePointerReset=resetPointerState;
+      });
+      btn.addEventListener('pointermove',event=>{
+        if(pointerId===null||event.pointerId!==pointerId)return;
+        lastPointerY=event.clientY;
+        if(!pointerDragging&&Math.abs(event.clientY-pointerStartY)<5)return;
+        if(!pointerDragging){
+          pointerDragging=true;isDraggingSource=true;suppressSourceClick=true;btn.classList.add('dragging');
+          btn.setPointerCapture?.(pointerId);
+        }
+        if(event.cancelable)event.preventDefault();
+        const rect=btn.getBoundingClientRect();
+        btn.style.transform=`translateY(${event.clientY-pointerStartY}px)`;
+        const placement=resolvePointerDropPosition(event.clientY);
+        document.querySelectorAll('#sourceList .source-item').forEach(item=>item.classList.remove('drag-over-top','drag-over-bottom'));
+        if(placement)placement.item.classList.add(placement.after?'drag-over-bottom':'drag-over-top');
+      });
+      btn.addEventListener('pointerup',finishPointerDrag);
+      btn.addEventListener('pointercancel',resetPointerState);
+      btn.addEventListener('lostpointercapture',()=>{if(pointerId!==null)resetPointerState()});
     }
     list.appendChild(btn);
   });
