@@ -11,6 +11,7 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from urllib.parse import urlparse
+from aggregation import AggregationError, RequestBudget, aggregate, parse_time
 
 load_dotenv()
 
@@ -811,6 +812,18 @@ def share_view(token):
     return render_template("share.html", missing=False, card_title=card["title"])
 
 
+def requested_aggregation():
+    mode = request.args.get("aggregation", "raw")
+    if mode not in {"raw", "hour", "day", "month"}:
+        raise AggregationError("aggregation 必须是 raw、hour、day 或 month", 400, "invalid_aggregation")
+    return mode
+
+
+@app.errorhandler(AggregationError)
+def handle_aggregation_error(error):
+    return jsonify({"error": str(error), "code": error.code}), error.status
+
+
 @app.get("/api/share/<token>")
 def share_data(token):
     card = get_shared_card(token)
@@ -830,6 +843,8 @@ def share_data(token):
     source = sources.get(card["source_id"])
     if not source or not source["enabled"]:
         return jsonify({"error": "数据源已禁用"}), 409
+    mode = requested_aggregation()
+    budget = RequestBudget() if mode != "raw" else None
     start_time, end_time, window_label, selected_window, available_windows = get_share_window(
         card, request.args.get("window")
     )
@@ -839,40 +854,56 @@ def share_data(token):
             selected_source = sources.get(selected_source_id)
             if not selected_source:
                 continue
+            allowed_numbers = {item["field_number"] for item in selections if item["source_id"] == selected_source_id}
+            allowed_fields = {f"field{number}" for number in allowed_numbers}
             dataset = {
                 "source": {"id": selected_source_id, "name": selected_source["name"]},
-                "fields": get_fields(selected_source_id),
+                "fields": [field for field in get_fields(selected_source_id) if field["field_number"] in allowed_numbers],
                 "channel": {},
                 "feeds": [],
             }
             if selected_source["enabled"]:
-                params = {
-                    "start": start_time.isoformat(),
-                    "end": end_time.isoformat(),
-                }
-                if selected_source["read_api_key"]:
-                    params["api_key"] = selected_source["read_api_key"]
-                response = requests.get(
-                    f"{THINGSPEAK_BASE}/channels/{selected_source['channel_id']}/feeds.json",
-                    params=params,
-                    timeout=15,
-                )
-                response.raise_for_status()
-                response_payload = response.json()
+                if mode != "raw":
+                    response_payload = aggregate(
+                        selected_source, THINGSPEAK_BASE, start_time, end_time, mode, budget
+                    )
+                    dataset["aggregation"] = response_payload["aggregation"]
+                else:
+                    params = {
+                        "start": start_time.isoformat(),
+                        "end": end_time.isoformat(),
+                    }
+                    if selected_source["read_api_key"]:
+                        params["api_key"] = selected_source["read_api_key"]
+                    response = requests.get(
+                        f"{THINGSPEAK_BASE}/channels/{selected_source['channel_id']}/feeds.json",
+                        params=params,
+                        timeout=15,
+                    )
+                    response.raise_for_status()
+                    response_payload = response.json()
                 channel = response_payload.get("channel") or {}
                 dataset["channel"] = {
-                    key: value for key, value in channel.items() if key.startswith("field")
+                    key: value for key, value in channel.items() if key in allowed_fields
                 }
-                dataset["feeds"] = response_payload.get("feeds") or []
+                # 分享只返回卡片选择的字段；构造新对象，不修改聚合缓存。
+                public_keys = allowed_fields | {"entry_id", "created_at", "bucket_end", "range_start", "range_end", "partial"}
+                for feed in response_payload.get("feeds") or []:
+                    public_feed = {key: value for key, value in feed.items() if key in public_keys}
+                    if "counts" in feed:
+                        public_feed["counts"] = {key: value for key, value in feed["counts"].items() if key in allowed_fields}
+                    dataset["feeds"].append(public_feed)
             source_data[str(selected_source_id)] = dataset
         owner_data = source_data.get(str(source["id"]), {})
         payload = {
             "channel": owner_data.get("channel", {}),
             "feeds": owner_data.get("feeds", []),
-            "fields": get_fields(source["id"]),
+            "fields": owner_data.get("fields", []),
             "source": {"id": source["id"], "name": source["name"]},
             "source_data": source_data,
         }
+        if "aggregation" in owner_data:
+            payload["aggregation"] = owner_data["aggregation"]
         payload["card"] = card_public(card, include_token=False)
         payload["share_window"] = window_label
         payload["selected_window"] = selected_window
@@ -891,6 +922,15 @@ def source_data(source_id):
         return jsonify({"error": "数据源已禁用"}), 409
 
     last_only = request.args.get("last") in {"1", "true", "yes"}
+    mode = requested_aggregation()
+    if mode != "raw":
+        if last_only:
+            raise AggregationError("聚合不能与 last 同时使用", 400, "invalid_aggregation")
+        start_time = parse_time(request.args.get("start"))
+        end_time = parse_time(request.args.get("end"))
+        payload = aggregate(source, THINGSPEAK_BASE, start_time, end_time, mode)
+        payload["source"] = {"id": source["id"], "name": source["name"], "channel_id": source["channel_id"]}
+        return jsonify(payload)
     params = {"offset": 0}
     api_key = source["read_api_key"]
     if api_key:
