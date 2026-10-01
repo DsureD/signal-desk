@@ -65,7 +65,7 @@ function renderShare(data){
   shareChart.setOption({
     animation:!mobile,animationDuration:mobile?0:450,backgroundColor:'transparent',color:shareColors,
     tooltip:{trigger:type==='bar'?'item':'axis',confine:true,formatter:TelemetryView.tooltip(mode),axisPointer:{type:'line'},backgroundColor:'#16212b',borderColor:'#314352',textStyle:{color:'#e8eef2'}},
-    legend:{show:true,type:'scroll',top:0,right:0,textStyle:{color:'#94a3af',fontSize:11}},
+    legend:{show:!mobile,type:'scroll',top:0,right:0,textStyle:{color:'#94a3af',fontSize:11}},
     grid:{left:48,right:mobile?16:24,top:38,bottom:38},
     xAxis:{type:'time',minInterval:({hour:3600000,day:86400000,month:2419200000})[mode],splitNumber:mobile?4:6,boundaryGap:card.chart_type==='bar',axisLine:{lineStyle:{color:'#30404d'}},axisLabel:{color:'#718391',fontSize:10,hideOverlap:true,formatter:value=>TelemetryView.date(value,mode)}},
     yAxis:{type:'value',min:card.y_axis_min===null?null:Number(card.y_axis_min),splitLine:{lineStyle:{color:'#23313c'}},axisLabel:{color:'#718391',fontSize:10}},
@@ -78,6 +78,7 @@ function renderShare(data){
       return item;
     })
   });
+  TelemetryView.touchLegend(shareChart);
 }
 async function loadShareData(){
   if(shareController)shareController.abort();

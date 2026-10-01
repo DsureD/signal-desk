@@ -518,3 +518,14 @@ dialog textarea{height:auto}
 .toolbar .custom-range input[type="datetime-local"]{
   color-scheme:dark;
 }
+
+.card-chart{position:relative}
+.chart-touch-legend{display:none}
+@media(max-width:900px){
+  .chart-touch-legend{position:absolute;top:0;left:0;right:0;z-index:2;display:flex;gap:14px;align-items:center;height:34px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none;touch-action:pan-x pan-y;user-select:none;-webkit-overflow-scrolling:touch}
+  .chart-touch-legend::-webkit-scrollbar{display:none}
+  .chart-touch-legend button{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;min-height:32px;margin:0;padding:4px 2px;border:0;background:transparent;color:#94a3af;font-family:inherit;font-size:11px;white-space:nowrap;cursor:pointer}
+  .chart-touch-legend button[aria-pressed="false"]{opacity:.4}
+  .chart-touch-legend button:focus-visible{outline:1px solid var(--accent);outline-offset:-1px;border-radius:3px}
+  .chart-legend-swatch{flex:none;width:16px;height:4px;border-radius:2px}
+}

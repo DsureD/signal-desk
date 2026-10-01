@@ -1,10 +1,10 @@
-const CACHE_NAME='signal-desk-pwa-v17';
+const CACHE_NAME='signal-desk-pwa-v18';
 const STATIC_ASSETS=[
   '/',
-  '/static/style.css?v=15',
-  '/static/app.js?v=14',
-  '/static/data-view.js?v=2',
-  '/static/share.js?v=14',
+  '/static/style.css?v=16',
+  '/static/app.js?v=15',
+  '/static/data-view.js?v=3',
+  '/static/share.js?v=15',
   '/static/pwa.js?v=8',
   '/static/login.js?v=8',
   '/icon.svg',

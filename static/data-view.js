@@ -101,5 +101,41 @@ const TelemetryView=(()=>{
       button.onclick=()=>{element._page+=step;renderTable(element)};nav.appendChild(button);
     });body.appendChild(nav);
   }
-  return{labels,colors,number,format,date,period,metrics,metricLabels,hint,bindControls,selectControl,tooltip,points,style,table};
+  // 使用原生滚动图例，避免手机上通过分页箭头查找曲线。
+  const legendMedia=window.matchMedia('(max-width:900px)');
+  legendMedia.addEventListener('change',()=>{
+    document.querySelectorAll('.chart-touch-legend').forEach(element=>{
+      const chart=echarts.getInstanceByDom(element.parentElement);
+      if(chart)chart.setOption({legend:{show:!legendMedia.matches}});
+    });
+  });
+  function touchLegend(chart){
+    const host=chart.getDom();
+    let legend=host.querySelector('.chart-touch-legend');
+    if(!legend){
+      legend=document.createElement('div');legend.className='chart-touch-legend';
+      legend.setAttribute('role','group');legend.setAttribute('aria-label','图例，可左右滑动，点击切换显示');
+      // 不让图例手势传给图表的缩放和提示层，保留浏览器原生滑动。
+      ['pointerdown','touchstart','touchmove','mousedown','click'].forEach(type=>legend.addEventListener(type,event=>event.stopPropagation(),{passive:true}));
+      host.appendChild(legend);
+      chart.on('legendselectchanged',event=>{
+        legend.querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(event.selected[button.dataset.name]!==false)));
+      });
+    }
+    const offset=legend.scrollLeft,option=chart.getOption(),selected=option.legend?.[0]?.selected||{};
+    legend.replaceChildren();
+    const names=new Set();
+    option.series.forEach(item=>{
+      if(names.has(item.name))return;
+      names.add(item.name);
+      const button=document.createElement('button');button.type='button';button.dataset.name=item.name;
+      button.setAttribute('aria-pressed',String(selected[item.name]!==false));
+      const swatch=document.createElement('span');swatch.className='chart-legend-swatch';swatch.style.backgroundColor=item.itemStyle?.color||colors[(names.size-1)%colors.length];
+      swatch.setAttribute('aria-hidden','true');button.append(swatch,document.createTextNode(item.name));
+      button.onclick=()=>chart.dispatchAction({type:'legendToggleSelect',name:item.name});
+      legend.appendChild(button);
+    });
+    legend.scrollLeft=offset;
+  }
+  return{labels,colors,number,format,date,period,metrics,metricLabels,hint,bindControls,selectControl,tooltip,points,style,table,touchLegend};
 })();
