@@ -4,6 +4,12 @@ Signal Desk 是一个轻量、适合个人部署的 ThingSpeak 数据仪表盘�
 
 项目不会把 ThingSpeak 历史 feeds 写入本地数据库。打开或刷新图表时，历史数据会直接从 ThingSpeak API 获取；本地数据库只保存配置和必要的分享链接信息。
 
+## DEMO
+<p align="center">
+  <img src="assets/demo-01.png" width="95%">
+</p>
+---
+
 ## 功能特性
 
 - 通过密码保护仪表盘和管理 API。
